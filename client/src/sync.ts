@@ -1,4 +1,7 @@
+import { locate } from "./modlib";
 import type { LocalJar, Mod, RevokedMod } from "./types";
+
+export { isRequiredMod } from "./modlib";
 
 export interface SyncCurrent {
   action: "current";
@@ -41,10 +44,6 @@ export interface UpdateStep {
   clientRequired?: boolean;
 }
 
-export function isRequiredMod(mod: { client_only?: boolean; client_required?: boolean }): boolean {
-  return mod.client_only !== true || mod.client_required === true;
-}
-
 function byFilename(left: LocalJar, right: LocalJar): number {
   if (left.filename < right.filename) return -1;
   if (left.filename > right.filename) return 1;
@@ -56,47 +55,22 @@ export function syncPlan(remote: Mod[], local: LocalJar[], revoked: RevokedMod[]
   const used = new Array<boolean>(locals.length).fill(false);
   const items: SyncItem[] = [];
 
-  const findUnused = (pred: (jar: LocalJar) => boolean): number => {
-    for (let index = 0; index < locals.length; index += 1) {
-      if (!used[index] && pred(locals[index])) return index;
-    }
-    return -1;
-  };
-
   for (const mod of remote) {
-    const byHash = findUnused((jar) => jar.sha256 === mod.sha256);
-    if (byHash >= 0) {
-      used[byHash] = true;
-      items.push({ action: "current", mod, filename: locals[byHash].filename });
+    const index = locate(locals, used, mod.sha256, mod.slug, mod.filename);
+    if (index < 0) {
+      items.push({ action: "install", mod });
       continue;
     }
-
-    if (mod.slug !== "") {
-      const slugMatches: number[] = [];
-      for (let index = 0; index < locals.length; index += 1) {
-        if (!used[index] && locals[index].slug === mod.slug) slugMatches.push(index);
-      }
-      if (slugMatches.length > 0) {
-        const exact = slugMatches.find((index) => locals[index].filename === mod.filename);
-        const chosen = exact !== undefined ? exact : slugMatches[0];
-        used[chosen] = true;
-        items.push({ action: "replace", mod, localFilename: locals[chosen].filename });
-        continue;
-      }
+    used[index] = true;
+    if (locals[index].sha256 === mod.sha256) {
+      items.push({ action: "current", mod, filename: locals[index].filename });
+    } else {
+      items.push({ action: "replace", mod, localFilename: locals[index].filename });
     }
-
-    const byName = findUnused((jar) => jar.filename === mod.filename);
-    if (byName >= 0) {
-      used[byName] = true;
-      items.push({ action: "replace", mod, localFilename: locals[byName].filename });
-      continue;
-    }
-
-    items.push({ action: "install", mod });
   }
 
   for (const item of revoked) {
-    const index = matchUnused(locals, used, item.sha256, item.slug, item.filename);
+    const index = locate(locals, used, item.sha256, item.slug, item.filename);
     if (index < 0) continue;
     used[index] = true;
     items.push({
@@ -112,28 +86,6 @@ export function syncPlan(remote: Mod[], local: LocalJar[], revoked: RevokedMod[]
     if (!used[index]) items.push({ action: "extra", local: locals[index] });
   }
   return items;
-}
-
-function matchUnused(locals: LocalJar[], used: boolean[], sha256: string, slug: string, filename: string): number {
-  const findUnused = (pred: (jar: LocalJar) => boolean): number => {
-    for (let index = 0; index < locals.length; index += 1) {
-      if (!used[index] && pred(locals[index])) return index;
-    }
-    return -1;
-  };
-  const byHash = findUnused((jar) => jar.sha256 === sha256);
-  if (byHash >= 0) return byHash;
-  if (slug !== "") {
-    const slugMatches: number[] = [];
-    for (let index = 0; index < locals.length; index += 1) {
-      if (!used[index] && locals[index].slug === slug) slugMatches.push(index);
-    }
-    if (slugMatches.length > 0) {
-      const exact = slugMatches.find((index) => locals[index].filename === filename);
-      return exact !== undefined ? exact : slugMatches[0];
-    }
-  }
-  return findUnused((jar) => jar.filename === filename);
 }
 
 export function configsOutOfDate(mod: Mod, registry: Record<string, string>): boolean {
