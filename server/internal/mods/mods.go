@@ -1097,15 +1097,6 @@ func hashRegular(dir, name string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func metaFromPath(path, filename string) (Meta, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return Meta{}, err
-	}
-	defer f.Close()
-	return ReadMeta(f, filename)
-}
-
 func writeTemp(dir string, r io.Reader, limit int64) (string, string, int64, error) {
 	f, err := os.CreateTemp(dir, ".part-*")
 	if err != nil {

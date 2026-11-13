@@ -13,6 +13,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"modupdater/internal/modlib"
 )
 
 //go:embed migrations/001_init.sql
@@ -64,7 +66,6 @@ var (
 	ErrInviteInvalid = errors.New("invite_invalid")
 	ErrUsernameTaken = errors.New("username_taken")
 
-	idRe    = regexp.MustCompile(`^[0-9a-f]{32}$`)
 	tokenRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
@@ -479,7 +480,7 @@ func randomHex(n int) (string, error) {
 }
 
 func ValidID(s string) bool {
-	return idRe.MatchString(s)
+	return modlib.ValidID(s)
 }
 
 func ValidToken(s string) bool {
