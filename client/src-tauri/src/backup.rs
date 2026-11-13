@@ -25,7 +25,9 @@ pub struct LauncherInfo {
 }
 
 pub fn version_root(mods_dir: &Path) -> Result<PathBuf, String> {
-    let mods = mods_dir.canonicalize().map_err(|_| "invalid_config".to_string())?;
+    let mods = mods_dir
+        .canonicalize()
+        .map_err(|_| "invalid_config".to_string())?;
     if !mods.is_dir() {
         return Err("invalid_config".into());
     }
@@ -36,17 +38,26 @@ pub fn version_root(mods_dir: &Path) -> Result<PathBuf, String> {
     Ok(parent.to_path_buf())
 }
 
-pub fn ensure_instance_backup(root: &Path, progress: &dyn Fn(u64, u64)) -> Result<BackupOutcome, String> {
+pub fn ensure_instance_backup(
+    root: &Path,
+    progress: &dyn Fn(u64, u64),
+) -> Result<BackupOutcome, String> {
     let root = canonical_dir(root)?;
     let marker = root.join(MARKER);
     if is_symlink(&marker) {
         return Err("invalid_path".into());
     }
     if marker.is_file() {
-        return Ok(BackupOutcome { created: false, path: String::new() });
+        return Ok(BackupOutcome {
+            created: false,
+            path: String::new(),
+        });
     }
     let path = write_backup_zip(&root, progress)?;
-    let name = path.file_name().and_then(|item| item.to_str()).unwrap_or("backup.zip");
+    let name = path
+        .file_name()
+        .and_then(|item| item.to_str())
+        .unwrap_or("backup.zip");
     write_marker(&marker, name.as_bytes())?;
     Ok(BackupOutcome {
         created: true,
@@ -54,7 +65,10 @@ pub fn ensure_instance_backup(root: &Path, progress: &dyn Fn(u64, u64)) -> Resul
     })
 }
 
-pub fn create_instance_backup(root: &Path, progress: &dyn Fn(u64, u64)) -> Result<BackupOutcome, String> {
+pub fn create_instance_backup(
+    root: &Path,
+    progress: &dyn Fn(u64, u64),
+) -> Result<BackupOutcome, String> {
     let root = canonical_dir(root)?;
     let path = write_backup_zip(&root, progress)?;
     Ok(BackupOutcome {
@@ -64,7 +78,9 @@ pub fn create_instance_backup(root: &Path, progress: &dyn Fn(u64, u64)) -> Resul
 }
 
 pub fn inspect_launcher(mods_dir: &Path) -> Result<LauncherInfo, String> {
-    let mods = mods_dir.canonicalize().map_err(|_| "invalid_config".to_string())?;
+    let mods = mods_dir
+        .canonicalize()
+        .map_err(|_| "invalid_config".to_string())?;
     let fallback_root = version_root(&mods)?;
     let other = LauncherInfo {
         kind: "other".into(),
@@ -76,7 +92,9 @@ pub fn inspect_launcher(mods_dir: &Path) -> Result<LauncherInfo, String> {
         return Ok(other);
     }
     let version_dir = mods.parent().ok_or_else(|| "invalid_config".to_string())?;
-    let home = version_dir.parent().ok_or_else(|| "invalid_config".to_string())?;
+    let home = version_dir
+        .parent()
+        .ok_or_else(|| "invalid_config".to_string())?;
     if home.file_name().and_then(|name| name.to_str()) != Some("home") {
         return Ok(other);
     }
@@ -107,7 +125,12 @@ pub fn inspect_launcher(mods_dir: &Path) -> Result<LauncherInfo, String> {
     })
 }
 
-pub fn duplicate_version(mods_dir: &Path, src: &str, new_name: &str, progress: &dyn Fn(u64, u64)) -> Result<(), String> {
+pub fn duplicate_version(
+    mods_dir: &Path,
+    src: &str,
+    new_name: &str,
+    progress: &dyn Fn(u64, u64),
+) -> Result<(), String> {
     let info = inspect_launcher(mods_dir)?;
     if info.kind != "legacy" {
         return Err("not_legacy".into());
@@ -149,7 +172,10 @@ fn write_backup_zip(root: &Path, progress: &dyn Fn(u64, u64)) -> Result<PathBuf,
     let entries = collect_entries(root, &dest)?;
     let total = entries.iter().map(|entry| entry.bytes).sum::<u64>();
     progress(0, total);
-    let mut guard = FileGuard { path: dest.clone(), keep: false };
+    let mut guard = FileGuard {
+        path: dest.clone(),
+        keep: false,
+    };
     let file = File::create(&dest).map_err(|_| "internal".to_string())?;
     let mut zip = ZipWriter::new(file);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
@@ -157,11 +183,17 @@ fn write_backup_zip(root: &Path, progress: &dyn Fn(u64, u64)) -> Result<PathBuf,
     for entry in &entries {
         let name = &entry.name;
         if entry.dir {
-            let dir_name = if name.ends_with('/') { name.clone() } else { format!("{name}/") };
-            zip.add_directory(dir_name, opts).map_err(|_| "internal".to_string())?;
+            let dir_name = if name.ends_with('/') {
+                name.clone()
+            } else {
+                format!("{name}/")
+            };
+            zip.add_directory(dir_name, opts)
+                .map_err(|_| "internal".to_string())?;
             continue;
         }
-        zip.start_file(name, opts).map_err(|_| "internal".to_string())?;
+        zip.start_file(name, opts)
+            .map_err(|_| "internal".to_string())?;
         let mut input = File::open(&entry.path).map_err(|_| "internal".to_string())?;
         let mut buf = [0u8; 64 * 1024];
         loop {
@@ -169,7 +201,8 @@ fn write_backup_zip(root: &Path, progress: &dyn Fn(u64, u64)) -> Result<PathBuf,
             if n == 0 {
                 break;
             }
-            zip.write_all(&buf[..n]).map_err(|_| "internal".to_string())?;
+            zip.write_all(&buf[..n])
+                .map_err(|_| "internal".to_string())?;
             loaded += n as u64;
             progress(loaded.min(total), total);
         }
@@ -194,8 +227,16 @@ fn collect_entries(root: &Path, zip_path: &Path) -> Result<Vec<Planned>, String>
     Ok(out)
 }
 
-fn walk_entries(root: &Path, dir: &Path, zip_path: &Path, out: &mut Vec<Planned>) -> Result<(), String> {
-    let mut names = fs::read_dir(dir).map_err(|_| "internal".to_string())?.collect::<Result<Vec<_>, _>>().map_err(|_| "internal".to_string())?;
+fn walk_entries(
+    root: &Path,
+    dir: &Path,
+    zip_path: &Path,
+    out: &mut Vec<Planned>,
+) -> Result<(), String> {
+    let mut names = fs::read_dir(dir)
+        .map_err(|_| "internal".to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "internal".to_string())?;
     names.sort_by_key(|entry| entry.file_name());
     for entry in names {
         let name = entry.file_name();
@@ -248,7 +289,9 @@ fn walk_entries(root: &Path, dir: &Path, zip_path: &Path, out: &mut Vec<Planned>
 }
 
 fn rel_name(root: &Path, path: &Path) -> Result<String, String> {
-    let rel = path.strip_prefix(root).map_err(|_| "invalid_path".to_string())?;
+    let rel = path
+        .strip_prefix(root)
+        .map_err(|_| "invalid_path".to_string())?;
     let mut parts = Vec::new();
     for component in rel.components() {
         match component {
@@ -308,7 +351,10 @@ fn copy_tree_inner(
         return Err("internal".into());
     }
     fs::create_dir(dest).map_err(|_| "internal".to_string())?;
-    let mut entries = fs::read_dir(src).map_err(|_| "internal".to_string())?.collect::<Result<Vec<_>, _>>().map_err(|_| "internal".to_string())?;
+    let mut entries = fs::read_dir(src)
+        .map_err(|_| "internal".to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "internal".to_string())?;
     entries.sort_by_key(|entry| entry.file_name());
     for entry in entries {
         let name = entry.file_name();
@@ -393,12 +439,19 @@ fn patch_version_id(path: &Path, new_name: &str) -> Result<(), String> {
     if bytes.len() > 1024 * 1024 {
         return Err("internal".into());
     }
-    let mut value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| "invalid_config".to_string())?;
-    let obj = value.as_object_mut().ok_or_else(|| "invalid_config".to_string())?;
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "invalid_config".to_string())?;
+    let obj = value
+        .as_object_mut()
+        .ok_or_else(|| "invalid_config".to_string())?;
     obj.insert("id".into(), serde_json::Value::String(new_name.to_string()));
     let mut out = serde_json::to_vec_pretty(&value).map_err(|_| "internal".to_string())?;
     out.push(b'\n');
-    let mut file = OpenOptions::new().write(true).truncate(true).open(path).map_err(|_| "internal".to_string())?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|_| "internal".to_string())?;
     file.write_all(&out).map_err(|_| "internal".to_string())?;
     file.sync_all().map_err(|_| "internal".to_string())?;
     Ok(())
@@ -440,11 +493,18 @@ pub(crate) fn valid_version_name(name: &str) -> bool {
 }
 
 fn segment_ok(name: &str) -> bool {
-    !name.is_empty() && name != "." && name != ".." && !name.contains('/') && !name.contains('\\') && !name.contains('\0')
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !name.contains('\0')
 }
 
 fn canonical_dir(path: &Path) -> Result<PathBuf, String> {
-    let path = path.canonicalize().map_err(|_| "invalid_config".to_string())?;
+    let path = path
+        .canonicalize()
+        .map_err(|_| "invalid_config".to_string())?;
     if !path.is_dir() || normal_components(&path) == 0 {
         return Err("invalid_config".into());
     }
@@ -452,7 +512,9 @@ fn canonical_dir(path: &Path) -> Result<PathBuf, String> {
 }
 
 fn normal_components(path: &Path) -> usize {
-    path.components().filter(|component| matches!(component, Component::Normal(_))).count()
+    path.components()
+        .filter(|component| matches!(component, Component::Normal(_)))
+        .count()
 }
 
 fn path_inside(root: &Path, path: &Path) -> bool {
@@ -464,18 +526,27 @@ fn entry_exists(path: &Path) -> bool {
 }
 
 fn is_symlink(path: &Path) -> bool {
-    fs::symlink_metadata(path).map(|meta| meta.file_type().is_symlink()).unwrap_or(false)
+    fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false)
 }
 
 fn unix_secs() -> Result<u64, String> {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).map_err(|_| "internal".to_string())
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .map_err(|_| "internal".to_string())
 }
 
 fn write_marker(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if is_symlink(path) {
         return Err("invalid_path".into());
     }
-    let mut file = OpenOptions::new().write(true).create_new(true).open(path).map_err(|_| "internal".to_string())?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|_| "internal".to_string())?;
     file.write_all(bytes).map_err(|_| "internal".to_string())?;
     file.sync_all().map_err(|_| "internal".to_string())?;
     Ok(())
@@ -507,7 +578,10 @@ mod tests {
         fn new(label: &str) -> Self {
             static N: AtomicUsize = AtomicUsize::new(0);
             let n = N.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
             let path = std::env::temp_dir().join(format!("modupdater-bak-{label}-{n}-{nanos}"));
             fs::create_dir_all(&path).unwrap();
             Self { path }
@@ -525,7 +599,14 @@ mod tests {
         let mut archive = zip::ZipArchive::new(file).unwrap();
         let mut names = Vec::new();
         for index in 0..archive.len() {
-            names.push(archive.by_index(index).unwrap().name().trim_end_matches('/').to_string());
+            names.push(
+                archive
+                    .by_index(index)
+                    .unwrap()
+                    .name()
+                    .trim_end_matches('/')
+                    .to_string(),
+            );
         }
         names.sort();
         names
@@ -561,16 +642,28 @@ mod tests {
         assert!(names.iter().any(|name| name == "config/x.txt"));
         assert!(names.iter().any(|name| name == "options.txt"));
         assert!(names.iter().any(|name| name == "nested/logs/keep.txt"));
-        assert!(names.iter().all(|name| !name.starts_with("logs") && !name.starts_with("crash-reports")));
-        assert!(names.iter().all(|name| !name.contains("modupdater-initial-backup")));
+        assert!(names
+            .iter()
+            .all(|name| !name.starts_with("logs") && !name.starts_with("crash-reports")));
+        assert!(names
+            .iter()
+            .all(|name| !name.contains("modupdater-initial-backup")));
         assert!(names.iter().all(|name| name != "link.txt"));
         assert!(!names.iter().any(|name| name.contains("..")));
 
         let second = ensure_instance_backup(&root, &|_, _| {}).unwrap();
         assert!(!second.created);
-        let zips = fs::read_dir(&root).unwrap().filter(|entry| {
-            entry.as_ref().unwrap().file_name().to_string_lossy().starts_with(BACKUP_PREFIX)
-        }).count();
+        let zips = fs::read_dir(&root)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(BACKUP_PREFIX)
+            })
+            .count();
         assert_eq!(zips, 2);
 
         let third = create_instance_backup(&root, &|_, _| {}).unwrap();
@@ -596,7 +689,10 @@ mod tests {
         let info = inspect_launcher(&mods).unwrap();
         assert_eq!(info.kind, "legacy");
         assert_eq!(info.current_version, version);
-        assert_eq!(info.versions, vec!["1.20.1 foo".to_string(), "other".to_string()]);
+        assert_eq!(
+            info.versions,
+            vec!["1.20.1 foo".to_string(), "other".to_string()]
+        );
         assert_eq!(PathBuf::from(&info.root), mc.canonicalize().unwrap());
 
         let plain = tmp.path.join("instance/mods");
@@ -605,7 +701,10 @@ mod tests {
         assert_eq!(other.kind, "other");
         assert!(other.current_version.is_empty());
         assert!(other.versions.is_empty());
-        assert_eq!(PathBuf::from(&other.root), plain.parent().unwrap().canonicalize().unwrap());
+        assert_eq!(
+            PathBuf::from(&other.root),
+            plain.parent().unwrap().canonicalize().unwrap()
+        );
     }
 
     #[test]
@@ -629,11 +728,19 @@ mod tests {
         assert!(copied.join("fabric (copy 1).jar").is_file());
         assert!(!copied.join("fabric.jar").exists());
         assert_eq!(fs::read(copied.join("natives/lib.bin")).unwrap(), b"nat");
-        let json: serde_json::Value = serde_json::from_slice(&fs::read(copied.join("fabric (copy 1).json")).unwrap()).unwrap();
+        let json: serde_json::Value =
+            serde_json::from_slice(&fs::read(copied.join("fabric (copy 1).json")).unwrap())
+                .unwrap();
         assert_eq!(json["id"], new_name);
         assert_eq!(json["time"], "t");
-        assert_eq!(fs::read(mc.join("home").join(new_name).join("options.txt")).unwrap(), b"opt");
-        assert_eq!(fs::read(mc.join("home").join(new_name).join("mods/a.jar")).unwrap(), b"mod");
+        assert_eq!(
+            fs::read(mc.join("home").join(new_name).join("options.txt")).unwrap(),
+            b"opt"
+        );
+        assert_eq!(
+            fs::read(mc.join("home").join(new_name).join("mods/a.jar")).unwrap(),
+            b"mod"
+        );
         let err = duplicate_version(&mods, src, new_name, &|_, _| {}).unwrap_err();
         assert_eq!(err, "already_exists");
         assert!(mc.join("home").join(src).join("options.txt").is_file());
@@ -646,14 +753,27 @@ mod tests {
         fs::create_dir_all(mc.join("home/fabric/mods")).unwrap();
         fs::create_dir_all(mc.join("versions/fabric")).unwrap();
         fs::write(mc.join("versions/fabric/fabric.jar"), b"b").unwrap();
-        fs::write(mc.join("versions/fabric/fabric.json"), br#"{"id":"fabric"}"#).unwrap();
+        fs::write(
+            mc.join("versions/fabric/fabric.json"),
+            br#"{"id":"fabric"}"#,
+        )
+        .unwrap();
         let mods = mc.join("home/fabric/mods");
-        assert_eq!(duplicate_version(&mods, "fabric", "../evil", &|_, _| {}).unwrap_err(), "invalid_path");
-        assert_eq!(duplicate_version(&mods, "fabric", "evil/name", &|_, _| {}).unwrap_err(), "invalid_path");
+        assert_eq!(
+            duplicate_version(&mods, "fabric", "../evil", &|_, _| {}).unwrap_err(),
+            "invalid_path"
+        );
+        assert_eq!(
+            duplicate_version(&mods, "fabric", "evil/name", &|_, _| {}).unwrap_err(),
+            "invalid_path"
+        );
         assert!(!tmp.path.join("evil").exists());
         let plain = tmp.path.join("mods");
         fs::create_dir_all(&plain).unwrap();
-        assert_eq!(duplicate_version(&plain, "a", "b", &|_, _| {}).unwrap_err(), "not_legacy");
+        assert_eq!(
+            duplicate_version(&plain, "a", "b", &|_, _| {}).unwrap_err(),
+            "not_legacy"
+        );
     }
 
     #[test]

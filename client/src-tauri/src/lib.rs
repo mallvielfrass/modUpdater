@@ -67,7 +67,9 @@ pub(crate) fn normalize_exe_path(exe: &Path) -> PathBuf {
 }
 
 pub(crate) fn config_dir_from_exe(exe: &Path) -> Result<PathBuf, String> {
-    let canon = normalize_exe_path(exe).canonicalize().map_err(|_| "invalid_config".to_string())?;
+    let canon = normalize_exe_path(exe)
+        .canonicalize()
+        .map_err(|_| "invalid_config".to_string())?;
     Ok(config_dir_from_canonical(&canon))
 }
 
@@ -139,7 +141,9 @@ pub(crate) fn save_config_to(dir: &Path, mods_dir: &str) -> Result<(), String> {
     if !dir.is_dir() {
         return Err("invalid_config".into());
     }
-    let cfg = Config { mods_dir: mods_dir.to_string() };
+    let cfg = Config {
+        mods_dir: mods_dir.to_string(),
+    };
     let bytes = serde_json::to_vec_pretty(&cfg).map_err(|_| "internal".to_string())?;
     write_private(&dir.join("config.json"), &bytes)
 }
@@ -153,7 +157,8 @@ pub(crate) fn load_session_from(dir: &Path) -> Result<String, String> {
         return Ok(String::new());
     }
     let bytes = fs::read(&path).map_err(|_| "invalid_config".to_string())?;
-    let parsed: SessionFile = serde_json::from_slice(&bytes).map_err(|_| "invalid_config".to_string())?;
+    let parsed: SessionFile =
+        serde_json::from_slice(&bytes).map_err(|_| "invalid_config".to_string())?;
     Ok(parsed.token)
 }
 
@@ -188,7 +193,9 @@ fn validate_mods_dir(raw: &str) -> Result<(), String> {
 }
 
 fn is_symlink(path: &Path) -> bool {
-    fs::symlink_metadata(path).map(|meta| meta.file_type().is_symlink()).unwrap_or(false)
+    fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false)
 }
 
 pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -203,12 +210,14 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> Result<(), String> {
         opts.mode(0o600);
     }
     let mut file = opts.open(path).map_err(|_| "invalid_config".to_string())?;
-    file.write_all(bytes).map_err(|_| "invalid_config".to_string())?;
+    file.write_all(bytes)
+        .map_err(|_| "invalid_config".to_string())?;
     file.sync_all().map_err(|_| "invalid_config".to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|_| "invalid_config".to_string())?;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .map_err(|_| "invalid_config".to_string())?;
     }
     Ok(())
 }
@@ -217,7 +226,9 @@ fn mods_dir_from_config(cfg: &Config) -> Result<PathBuf, String> {
     if cfg.mods_dir.is_empty() {
         return Err("invalid_config".into());
     }
-    let dir = Path::new(&cfg.mods_dir).canonicalize().map_err(|_| "invalid_config".to_string())?;
+    let dir = Path::new(&cfg.mods_dir)
+        .canonicalize()
+        .map_err(|_| "invalid_config".to_string())?;
     if !dir.is_dir() {
         return Err("invalid_config".into());
     }
@@ -302,7 +313,12 @@ fn self_update(app: tauri::AppHandle, version: String, sha256: String) -> Result
 }
 
 #[tauri::command]
-fn launch_dev_release(app: tauri::AppHandle, version: String, sha256: String, token: String) -> Result<(), String> {
+fn launch_dev_release(
+    app: tauri::AppHandle,
+    version: String,
+    sha256: String,
+    token: String,
+) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|_| "internal".to_string())?;
     let cfg = load_config()?;
     let dest = update::launch_dev(
@@ -343,7 +359,9 @@ async fn download_backup(
     let Some(picked) = picked else {
         return Ok(false);
     };
-    let path = picked.into_path().map_err(|_| "Некорректный путь.".to_string())?;
+    let path = picked
+        .into_path()
+        .map_err(|_| "Некорректный путь.".to_string())?;
     tauri::async_runtime::spawn_blocking(move || save_backup(&app, &path, &server_url, &token, &id))
         .await
         .map_err(|_| "Не удалось скачать бекап.".to_string())?
@@ -357,9 +375,9 @@ fn safe_zip_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 160
         && name.ends_with(".tar.zst")
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_' || byte == b'.')
+        && name.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_' || byte == b'.'
+        })
 }
 
 #[tauri::command]
@@ -376,7 +394,9 @@ async fn save_log(app: tauri::AppHandle, filename: String, text: String) -> Resu
     let Some(picked) = picked else {
         return Ok(false);
     };
-    let path = picked.into_path().map_err(|_| "Некорректный путь.".to_string())?;
+    let path = picked
+        .into_path()
+        .map_err(|_| "Некорректный путь.".to_string())?;
     tauri::async_runtime::spawn_blocking(move || fs::write(&path, text))
         .await
         .map_err(|_| "Не удалось сохранить лог.".to_string())?
@@ -389,12 +409,18 @@ fn safe_log_name(name: &str) -> bool {
         && name.len() <= 80
         && name.ends_with(".txt")
         && !name.contains("..")
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_' || byte == b'.')
+        && name.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_' || byte == b'.'
+        })
 }
 
-fn save_backup(app: &tauri::AppHandle, path: &Path, server_url: &str, token: &str, id: &str) -> Result<bool, String> {
+fn save_backup(
+    app: &tauri::AppHandle,
+    path: &Path,
+    server_url: &str,
+    token: &str,
+    id: &str,
+) -> Result<bool, String> {
     let url = jars::api_url(server_url, &format!("/api/admin/backups/{id}/file"))?;
     OpenOptions::new()
         .write(true)
@@ -404,15 +430,22 @@ fn save_backup(app: &tauri::AppHandle, path: &Path, server_url: &str, token: &st
         .map_err(|_| "Не удалось скачать бекап.".to_string())?;
     let gate = ProgressGate::new();
     let saved = path.to_path_buf();
-    let result = jars::download_within(&url, path, server_url, Some(token), &|loaded, total| {
-        let now = Instant::now();
-        let done = total > 0 && loaded >= total;
-        if loaded != 0 && !done && now < gate.next.get() {
-            return;
-        }
-        gate.next.set(now + Duration::from_millis(100));
-        let _ = app.emit("backup-download", ProgressEvent { loaded, total });
-    }, None);
+    let result = jars::download_within(
+        &url,
+        path,
+        server_url,
+        Some(token),
+        &|loaded, total| {
+            let now = Instant::now();
+            let done = total > 0 && loaded >= total;
+            if loaded != 0 && !done && now < gate.next.get() {
+                return;
+            }
+            gate.next.set(now + Duration::from_millis(100));
+            let _ = app.emit("backup-download", ProgressEvent { loaded, total });
+        },
+        None,
+    );
     if let Err(err) = result {
         let _ = fs::remove_file(&saved);
         return Err(err);
@@ -421,33 +454,58 @@ fn save_backup(app: &tauri::AppHandle, path: &Path, server_url: &str, token: &st
 }
 
 #[tauri::command]
-async fn upload_world(app: tauri::AppHandle, server_url: String, token: String) -> Result<bool, String> {
-    let picked = app.dialog().file().set_title("Папка мира").blocking_pick_folder();
+async fn upload_world(
+    app: tauri::AppHandle,
+    server_url: String,
+    token: String,
+) -> Result<bool, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Папка мира")
+        .blocking_pick_folder();
     let Some(picked) = picked else {
         return Ok(false);
     };
-    let path = picked.into_path().map_err(|_| "Некорректный путь.".to_string())?;
+    let path = picked
+        .into_path()
+        .map_err(|_| "Некорректный путь.".to_string())?;
     tauri::async_runtime::spawn_blocking(move || upload_world_dir(&app, &path, &server_url, &token))
         .await
         .map_err(|_| "Не удалось загрузить мир.".to_string())?
 }
 
-fn upload_world_dir(app: &tauri::AppHandle, dir: &Path, server_url: &str, token: &str) -> Result<bool, String> {
+fn upload_world_dir(
+    app: &tauri::AppHandle,
+    dir: &Path,
+    server_url: &str,
+    token: &str,
+) -> Result<bool, String> {
     configs::require_level_dat(dir)?;
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|item| item.as_nanos())
         .unwrap_or(0);
-    let zip_path = std::env::temp_dir().join(format!("mu-world-{}-{nanos}.zip", std::process::id()));
+    let zip_path =
+        std::env::temp_dir().join(format!("mu-world-{}-{nanos}.zip", std::process::id()));
     let _cleanup = RemoveFile(zip_path.clone());
     configs::pack_directory(dir, &zip_path).map_err(|err| match err.as_str() {
         "invalid_path" => "Некорректный путь.".to_string(),
         _ => "Не удалось упаковать мир.".to_string(),
     })?;
     let file = File::open(&zip_path).map_err(|_| "Не удалось упаковать мир.".to_string())?;
-    let total = file.metadata().map_err(|_| "Не удалось упаковать мир.".to_string())?.len();
+    let total = file
+        .metadata()
+        .map_err(|_| "Не удалось упаковать мир.".to_string())?
+        .len();
     let _ = app.emit("world-upload", ProgressEvent { loaded: 0, total });
-    let reader = CountingFile { file, done: 0, total, next: Instant::now(), app: app.clone() };
+    let reader = CountingFile {
+        file,
+        done: 0,
+        total,
+        next: Instant::now(),
+        app: app.clone(),
+    };
     if token.is_empty() || token.bytes().any(|byte| byte <= 0x20 || byte >= 0x7f) {
         return Err("unauthorized".into());
     }
@@ -527,7 +585,11 @@ impl Read for CountingFile {
 
 #[tauri::command]
 async fn pack_dir_zip(app: tauri::AppHandle) -> Result<Option<configs::PackedZip>, String> {
-    let picked = app.dialog().file().set_title("Папка конфига").blocking_pick_folder();
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Папка конфига")
+        .blocking_pick_folder();
     let Some(picked) = picked else {
         return Ok(None);
     };
@@ -572,7 +634,9 @@ struct ProgressGate {
 
 impl ProgressGate {
     fn new() -> Self {
-        Self { next: Cell::new(Instant::now()) }
+        Self {
+            next: Cell::new(Instant::now()),
+        }
     }
 
     fn tick(&self, app: &tauri::AppHandle, loaded: u64, total: u64) {
@@ -621,7 +685,11 @@ fn inspect_launcher() -> Result<backup::LauncherInfo, String> {
 }
 
 #[tauri::command]
-async fn duplicate_version(app: tauri::AppHandle, src: String, new_name: String) -> Result<(), String> {
+async fn duplicate_version(
+    app: tauri::AppHandle,
+    src: String,
+    new_name: String,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let cfg = load_config()?;
         let mods = mods_dir_from_config(&cfg)?;
@@ -688,7 +756,10 @@ mod tests {
         fn new(label: &str) -> Self {
             static N: AtomicUsize = AtomicUsize::new(0);
             let n = N.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
             let path = std::env::temp_dir().join(format!("modupdater-cfg-{label}-{n}-{nanos}"));
             fs::create_dir_all(&path).unwrap();
             Self { path }
@@ -743,7 +814,11 @@ mod tests {
         assert_eq!(raw["mods_dir"], mods.to_str().unwrap());
         let loaded = load_config_from(&dir).unwrap();
         assert_eq!(loaded.mods_dir, mods.to_str().unwrap());
-        fs::write(&cfg_path, br#"{"server_url":"http://127.0.0.1:9","mods_dir":"kept"}"#).unwrap();
+        fs::write(
+            &cfg_path,
+            br#"{"server_url":"http://127.0.0.1:9","mods_dir":"kept"}"#,
+        )
+        .unwrap();
         assert_eq!(load_config_from(&dir).unwrap().mods_dir, "kept");
         save_session_to(&dir, "abc").unwrap();
         let session = dir.join("session.json");
@@ -854,8 +929,13 @@ mod tests {
             assert!(!lower.contains("fs:"), "{item}");
             assert!(lower != "fs" && lower != "filesystem", "{item}");
         }
-        let permissions = value.get("permissions").and_then(|item| item.as_array()).unwrap();
-        assert!(permissions.iter().any(|item| item.as_str() == Some("dialog:allow-open")));
+        let permissions = value
+            .get("permissions")
+            .and_then(|item| item.as_array())
+            .unwrap();
+        assert!(permissions
+            .iter()
+            .any(|item| item.as_str() == Some("dialog:allow-open")));
         assert!(!text.contains("fs:allow"));
     }
 
@@ -891,8 +971,16 @@ mod tests {
     #[test]
     fn config_code_does_not_fall_back_to_os_app_data() {
         let mut src = String::new();
-        for name in ["src/lib.rs", "src/jars.rs", "src/backup.rs", "src/configs.rs", "src/update.rs"] {
-            src.push_str(&fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(name)).unwrap());
+        for name in [
+            "src/lib.rs",
+            "src/jars.rs",
+            "src/backup.rs",
+            "src/configs.rs",
+            "src/update.rs",
+        ] {
+            src.push_str(
+                &fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(name)).unwrap(),
+            );
         }
         for needle in [
             ["Project", "Dirs"].concat(),

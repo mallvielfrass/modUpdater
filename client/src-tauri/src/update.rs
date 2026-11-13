@@ -39,7 +39,10 @@ pub fn valid_client_version(raw: &str) -> bool {
         return false;
     }
     pre.split('.').all(|part| {
-        !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        !part.is_empty()
+            && part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
     })
 }
 
@@ -70,7 +73,8 @@ pub fn replace_executable(current: &Path, staged: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(staged, fs::Permissions::from_mode(0o755)).map_err(|_| "internal".to_string())?;
+        fs::set_permissions(staged, fs::Permissions::from_mode(0o755))
+            .map_err(|_| "internal".to_string())?;
     }
     let old = old_exe_path(current);
     if fs::symlink_metadata(&old).is_ok() {
@@ -84,7 +88,13 @@ pub fn replace_executable(current: &Path, staged: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn self_update(exe: &Path, server_url: &str, version: &str, sha256: &str, progress: &dyn Fn(u64, u64)) -> Result<PathBuf, String> {
+pub fn self_update(
+    exe: &Path,
+    server_url: &str,
+    version: &str,
+    sha256: &str,
+    progress: &dyn Fn(u64, u64),
+) -> Result<PathBuf, String> {
     let os = release_os()?;
     if !valid_client_version(version) {
         return Err("invalid_version".into());
@@ -97,13 +107,26 @@ pub fn self_update(exe: &Path, server_url: &str, version: &str, sha256: &str, pr
         .canonicalize()
         .map_err(|_| "internal".to_string())?;
     let lock_path = dir.join(LOCK_NAME);
-    let _lock = match OpenOptions::new().write(true).create_new(true).open(&lock_path) {
-        Ok(_) => LockGuard { path: lock_path, keep: false },
+    let _lock = match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock_path)
+    {
+        Ok(_) => LockGuard {
+            path: lock_path,
+            keep: false,
+        },
         Err(_) => return Err("busy".into()),
     };
-    let url = jars::api_url(server_url, &format!("/api/client/releases/{version}/{os}/file"))?;
+    let url = jars::api_url(
+        server_url,
+        &format!("/api/client/releases/{version}/{os}/file"),
+    )?;
     let temp = jars::create_temp(&dir)?;
-    let mut staged = Staged { path: temp, keep: false };
+    let mut staged = Staged {
+        path: temp,
+        keep: false,
+    };
     let hash = jars::download(&url, &staged.path, server_url, None, progress)?;
     if !ct_eq(&hash, &expect) {
         return Err("hash_mismatch".into());
@@ -135,7 +158,10 @@ pub fn launch_dev(
     let runs = config_dir.join("dev-runs").join(version);
     fs::create_dir_all(&runs).map_err(|_| "internal".to_string())?;
     let runs = runs.canonicalize().map_err(|_| "internal".to_string())?;
-    let dev_root = config_dir.join("dev-runs").canonicalize().map_err(|_| "internal".to_string())?;
+    let dev_root = config_dir
+        .join("dev-runs")
+        .canonicalize()
+        .map_err(|_| "internal".to_string())?;
     if !runs.starts_with(&dev_root) {
         return Err("invalid_path".into());
     }
@@ -143,9 +169,15 @@ pub fn launch_dev(
     if dest == exe_real {
         return Err("internal".into());
     }
-    let url = jars::api_url(server_url, &format!("/api/admin/releases/{version}/{os}/file"))?;
+    let url = jars::api_url(
+        server_url,
+        &format!("/api/admin/releases/{version}/{os}/file"),
+    )?;
     let temp = jars::create_temp(&runs)?;
-    let mut staged = Staged { path: temp, keep: false };
+    let mut staged = Staged {
+        path: temp,
+        keep: false,
+    };
     let hash = jars::download(&url, &staged.path, server_url, Some(token), progress)?;
     if !ct_eq(&hash, &expect) {
         return Err("hash_mismatch".into());
@@ -153,7 +185,8 @@ pub fn launch_dev(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&staged.path, fs::Permissions::from_mode(0o755)).map_err(|_| "internal".to_string())?;
+        fs::set_permissions(&staged.path, fs::Permissions::from_mode(0o755))
+            .map_err(|_| "internal".to_string())?;
     }
     if fs::symlink_metadata(&dest).is_ok() {
         fs::remove_file(&dest).map_err(|_| "internal".to_string())?;
@@ -174,7 +207,11 @@ pub fn spawn_detached(exe: &Path, channel: Option<&str>) -> Result<(), String> {
 }
 
 fn dev_binary_name(os: &str) -> &'static str {
-    if os == "windows" { "modupdater.exe" } else { "modupdater" }
+    if os == "windows" {
+        "modupdater.exe"
+    } else {
+        "modupdater"
+    }
 }
 
 fn normalize_sha(sha: &str) -> Result<String, String> {
@@ -225,7 +262,10 @@ mod tests {
         fn new(label: &str) -> Self {
             static N: AtomicUsize = AtomicUsize::new(0);
             let n = N.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
             let path = std::env::temp_dir().join(format!("modupdater-upd-{label}-{n}-{nanos}"));
             fs::create_dir_all(&path).unwrap();
             Self { path }
@@ -284,7 +324,11 @@ mod tests {
         fs::write(&exe, b"admin").unwrap();
         let runs = dir.join("dev-runs").join("0.2.0");
         fs::create_dir_all(&runs).unwrap();
-        let dest = runs.join(if cfg!(windows) { "modupdater.exe" } else { "modupdater" });
+        let dest = runs.join(if cfg!(windows) {
+            "modupdater.exe"
+        } else {
+            "modupdater"
+        });
         assert_ne!(dest, exe);
         assert!(dest.starts_with(dir.join("dev-runs")));
         assert!(!dest.starts_with(&exe));

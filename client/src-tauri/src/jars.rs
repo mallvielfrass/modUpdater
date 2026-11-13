@@ -20,7 +20,10 @@ pub struct LocalJar {
 }
 
 pub fn safe_jar_name(raw: &str) -> Result<String, String> {
-    if raw.bytes().any(|b| b == 0 || b == b'\r' || b == b'\n' || b == b'"') {
+    if raw
+        .bytes()
+        .any(|b| b == 0 || b == b'\r' || b == b'\n' || b == b'"')
+    {
         return Err("invalid_filename".into());
     }
     let segments: Vec<&str> = raw.split(['/', '\\']).collect();
@@ -52,11 +55,16 @@ fn is_first(c: u8) -> bool {
 
 fn is_rest(c: u8) -> bool {
     c.is_ascii_alphanumeric()
-        || matches!(c, b'.' | b'_' | b'+' | b'(' | b')' | b'[' | b']' | b' ' | b'-')
+        || matches!(
+            c,
+            b'.' | b'_' | b'+' | b'(' | b')' | b'[' | b']' | b' ' | b'-'
+        )
 }
 
 pub fn scan_dir(mods_dir: &Path) -> Result<Vec<LocalJar>, String> {
-    let dir = mods_dir.canonicalize().map_err(|_| "invalid_config".to_string())?;
+    let dir = mods_dir
+        .canonicalize()
+        .map_err(|_| "invalid_config".to_string())?;
     if !dir.is_dir() {
         return Err("invalid_config".into());
     }
@@ -66,7 +74,9 @@ pub fn scan_dir(mods_dir: &Path) -> Result<Vec<LocalJar>, String> {
         let Some(name) = entry.file_name().into_string().ok() else {
             continue;
         };
-        let file_type = entry.file_type().map_err(|_| "invalid_config".to_string())?;
+        let file_type = entry
+            .file_type()
+            .map_err(|_| "invalid_config".to_string())?;
         if file_type.is_symlink() || file_type.is_dir() || !file_type.is_file() {
             continue;
         }
@@ -132,12 +142,17 @@ pub fn install_jar(
         _ => None,
     };
     let url = file_url(server_url, mod_id)?;
-    let dir = mods_dir.canonicalize().map_err(|_| "invalid_config".to_string())?;
+    let dir = mods_dir
+        .canonicalize()
+        .map_err(|_| "invalid_config".to_string())?;
     if !dir.is_dir() {
         return Err("invalid_config".into());
     }
     let temp = create_temp(&dir)?;
-    let mut guard = TempGuard { path: temp, keep: false };
+    let mut guard = TempGuard {
+        path: temp,
+        keep: false,
+    };
     let hash = download(&url, &guard.path, server_url, None, progress)?;
     if !ct_eq(&hash, sha256) {
         return Err("hash_mismatch".into());
@@ -161,7 +176,9 @@ pub fn backup_jar(mods_dir: &Path, filename: &str) -> Result<(), String> {
         return Err("invalid_filename".into());
     }
     let filename = safe_jar_name(filename)?;
-    let dir = mods_dir.canonicalize().map_err(|_| "invalid_config".to_string())?;
+    let dir = mods_dir
+        .canonicalize()
+        .map_err(|_| "invalid_config".to_string())?;
     rename_to_bak(&dir, &filename)
 }
 
@@ -178,7 +195,10 @@ fn api_error_text(code: &str) -> Option<String> {
     if code.is_empty() || code.len() > 180 || code.contains('\n') || code.contains('\r') {
         return None;
     }
-    let machine = code.len() <= 64 && code.bytes().all(|byte| byte.is_ascii_lowercase() || byte == b'_');
+    let machine = code.len() <= 64
+        && code
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte == b'_');
     let sentence = code.chars().any(|ch| !ch.is_ascii());
     if machine || sentence {
         return Some(code.to_string());
@@ -272,7 +292,14 @@ pub(crate) fn download(
     bearer: Option<&str>,
     progress: &dyn Fn(u64, u64),
 ) -> Result<String, String> {
-    download_within(url, dest, server_url, bearer, progress, Some(Duration::from_secs(120)))
+    download_within(
+        url,
+        dest,
+        server_url,
+        bearer,
+        progress,
+        Some(Duration::from_secs(120)),
+    )
 }
 
 pub(crate) fn download_within(
@@ -336,12 +363,15 @@ pub(crate) fn download_within(
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
-        let n = response.read(&mut buf).map_err(|_| "internal".to_string())?;
+        let n = response
+            .read(&mut buf)
+            .map_err(|_| "internal".to_string())?;
         if n == 0 {
             break;
         }
         hasher.update(&buf[..n]);
-        file.write_all(&buf[..n]).map_err(|_| "internal".to_string())?;
+        file.write_all(&buf[..n])
+            .map_err(|_| "internal".to_string())?;
         loaded += n as u64;
         progress(loaded, total);
     }
@@ -492,11 +522,19 @@ fn read_entry(archive: &mut ZipArchive<File>, name: &str) -> Result<Option<Vec<u
         Err(_) => return Err(()),
     };
     let mut buf = Vec::new();
-    entry.by_ref().take(META_LIMIT).read_to_end(&mut buf).map_err(|_| ())?;
+    entry
+        .by_ref()
+        .take(META_LIMIT)
+        .read_to_end(&mut buf)
+        .map_err(|_| ())?;
     Ok(Some(buf))
 }
 
-fn finish_slug(id: Option<String>, version: &str, stem: &str) -> Result<(String, String), ReadMeta> {
+fn finish_slug(
+    id: Option<String>,
+    version: &str,
+    stem: &str,
+) -> Result<(String, String), ReadMeta> {
     let slug = match id {
         Some(value) if !value.is_empty() => value,
         _ => stem.to_string(),
@@ -510,7 +548,9 @@ fn finish_slug(id: Option<String>, version: &str, stem: &str) -> Result<(String,
 fn valid_slug(slug: &str) -> bool {
     let bytes = slug.as_bytes();
     (1..=128).contains(&bytes.len())
-        && !bytes.iter().any(|byte| matches!(byte, b'/' | b'\\' | 0 | b'\r' | b'\n'))
+        && !bytes
+            .iter()
+            .any(|byte| matches!(byte, b'/' | b'\\' | 0 | b'\r' | b'\n'))
 }
 
 fn truncate_bytes(value: &str, max: usize) -> String {
@@ -532,7 +572,10 @@ fn parse_json_meta(bytes: &[u8]) -> Result<ParsedMeta, ()> {
         .map(str::trim)
         .filter(|item| !item.is_empty())
         .map(str::to_string);
-    let version = value.get("version").and_then(|item| item.as_str()).unwrap_or("");
+    let version = value
+        .get("version")
+        .and_then(|item| item.as_str())
+        .unwrap_or("");
     Ok(ParsedMeta {
         id,
         version: truncate_bytes(version, 64),
@@ -597,7 +640,9 @@ fn toml_pairs(body: &str) -> Vec<(String, String)> {
         }
         let key_start = index;
         index += 1;
-        while index < chars.len() && (chars[index].is_ascii_alphanumeric() || chars[index] == '_' || chars[index] == '-') {
+        while index < chars.len()
+            && (chars[index].is_ascii_alphanumeric() || chars[index] == '_' || chars[index] == '-')
+        {
             index += 1;
         }
         let key: String = chars[key_start..index].iter().collect();
@@ -646,10 +691,18 @@ fn read_toml_value(chars: &[char], index: usize) -> Option<(String, usize)> {
 }
 
 fn starts_with_quotes(chars: &[char], index: usize, quote: char, count: usize) -> bool {
-    index + count <= chars.len() && chars[index..index + count].iter().all(|item| *item == quote)
+    index + count <= chars.len()
+        && chars[index..index + count]
+            .iter()
+            .all(|item| *item == quote)
 }
 
-fn read_quoted(chars: &[char], mut index: usize, quote: char, escapes: bool) -> Option<(String, usize)> {
+fn read_quoted(
+    chars: &[char],
+    mut index: usize,
+    quote: char,
+    escapes: bool,
+) -> Option<(String, usize)> {
     let mut out = String::new();
     while index < chars.len() {
         let ch = chars[index];
@@ -674,7 +727,12 @@ fn read_quoted(chars: &[char], mut index: usize, quote: char, escapes: bool) -> 
     None
 }
 
-fn read_multiline(chars: &[char], mut index: usize, quote: char, escapes: bool) -> Option<(String, usize)> {
+fn read_multiline(
+    chars: &[char],
+    mut index: usize,
+    quote: char,
+    escapes: bool,
+) -> Option<(String, usize)> {
     let mut out = String::new();
     if index < chars.len() && chars[index] == '\n' {
         index += 1;
@@ -741,7 +799,10 @@ mod tests {
         fn new(label: &str) -> Self {
             static N: AtomicUsize = AtomicUsize::new(0);
             let n = N.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
             let path = std::env::temp_dir().join(format!("modupdater-{label}-{n}-{nanos}"));
             fs::create_dir_all(&path).unwrap();
             Self { path }
@@ -834,7 +895,12 @@ mod tests {
                 }
             }
         });
-        Server { port, hits, stop, handle: Some(handle) }
+        Server {
+            port,
+            hits,
+            stop,
+            handle: Some(handle),
+        }
     }
 
     fn read_headers(sock: &mut std::net::TcpStream) {
@@ -904,7 +970,10 @@ mod tests {
         fs::create_dir(&mods).unwrap();
         write_zip(
             &mods.join("Sodium.jar"),
-            &[("fabric.mod.json", br#"{"id":" sodium ","version":"0.6.0","description":["a","b"]}"#)],
+            &[(
+                "fabric.mod.json",
+                br#"{"id":" sodium ","version":"0.6.0","description":["a","b"]}"#,
+            )],
         );
         fs::write(mods.join("plain.jar"), b"hello-jar").unwrap();
         write_zip(&mods.join("broken.jar"), &[("fabric.mod.json", b"{")]);
@@ -913,18 +982,30 @@ mod tests {
             &[("quilt.mod.json", br#"{"id":"quiltmod","version":"2.0.0"}"#)],
         );
         let toml = b"modLoader=\"javafml\"\n[[mods]]\nmodId=\"forgemod\"\nversion=\"1.2.3\"\ndisplayName=\"Forge Mod\"\ndescription=\"Hello\"\n[[dependencies.forgemod]]\nmodId=\"forge\"\n";
-        write_zip(&mods.join("ForgeMod.jar"), &[("META-INF/mods.toml", toml.as_slice())]);
+        write_zip(
+            &mods.join("ForgeMod.jar"),
+            &[("META-INF/mods.toml", toml.as_slice())],
+        );
         write_zip(
             &mods.join("Both.jar"),
             &[
                 ("fabric.mod.json", br#"{"id":"from-fabric","version":"9"}"#),
-                ("META-INF/mods.toml", b"[[mods]]\nmodId=\"from-toml\"\nversion=\"1\"\n"),
+                (
+                    "META-INF/mods.toml",
+                    b"[[mods]]\nmodId=\"from-toml\"\nversion=\"1\"\n",
+                ),
             ],
         );
         let long = "v".repeat(70);
         let long_json = format!("{{\"id\":\"longver\",\"version\":\"{long}\"}}");
-        write_zip(&mods.join("LongVer.jar"), &[("fabric.mod.json", long_json.as_bytes())]);
-        write_zip(&mods.join("badslug.jar"), &[("fabric.mod.json", br#"{"id":"bad/id","version":"1"}"#)]);
+        write_zip(
+            &mods.join("LongVer.jar"),
+            &[("fabric.mod.json", long_json.as_bytes())],
+        );
+        write_zip(
+            &mods.join("badslug.jar"),
+            &[("fabric.mod.json", br#"{"id":"bad/id","version":"1"}"#)],
+        );
         fs::write(mods.join("zero.jar"), b"").unwrap();
         fs::write(mods.join("-bad.jar"), b"nope").unwrap();
         fs::write(mods.join("foo..jar"), b"nope").unwrap();
@@ -941,7 +1022,10 @@ mod tests {
         let after = names_of(&mods);
         assert_eq!(before, after);
 
-        let map: BTreeMap<_, _> = found.iter().map(|jar| (jar.filename.as_str(), jar)).collect();
+        let map: BTreeMap<_, _> = found
+            .iter()
+            .map(|jar| (jar.filename.as_str(), jar))
+            .collect();
         assert_eq!(
             map.keys().copied().collect::<Vec<_>>(),
             vec![
@@ -1009,7 +1093,9 @@ mod tests {
         .unwrap_err();
         assert_eq!(err, "hash_mismatch");
         assert_eq!(fs::read(mods.join("sodium-0.6.jar")).unwrap(), b"OLD");
-        assert!(names_of(&mods).iter().all(|name| !name.ends_with(".part") && !name.starts_with(".mu-")));
+        assert!(names_of(&mods)
+            .iter()
+            .all(|name| !name.ends_with(".part") && !name.starts_with(".mu-")));
         assert_eq!(names_of(&mods), vec!["sodium-0.6.jar".to_string()]);
     }
 
@@ -1020,8 +1106,16 @@ mod tests {
         fs::create_dir(&mods).unwrap();
         let mods = mods.canonicalize().unwrap();
         fs::write(mods.join("sodium-0.6.jar"), b"OLD").unwrap();
-        let id_err = install_jar(&mods, "http://127.0.0.1:9", "../abc", "sodium-0.6.jar", &digest(b"OLD"), None, &|_, _| {})
-            .unwrap_err();
+        let id_err = install_jar(
+            &mods,
+            "http://127.0.0.1:9",
+            "../abc",
+            "sodium-0.6.jar",
+            &digest(b"OLD"),
+            None,
+            &|_, _| {},
+        )
+        .unwrap_err();
         assert_eq!(id_err, "not_found");
         let name_err = install_jar(
             &mods,
@@ -1054,8 +1148,16 @@ mod tests {
             "cd".repeat(16)
         );
         let server = serve(redirect, Vec::new());
-        let err = install_jar(&mods, &server.url(), &"ab".repeat(16), "sodium-0.6.jar", &digest(payload), None, &|_, _| {})
-            .unwrap_err();
+        let err = install_jar(
+            &mods,
+            &server.url(),
+            &"ab".repeat(16),
+            "sodium-0.6.jar",
+            &digest(payload),
+            None,
+            &|_, _| {},
+        )
+        .unwrap_err();
         assert_eq!(err, "internal");
         assert_eq!(decoy.hits.load(Ordering::SeqCst), 0);
         assert_eq!(fs::read(mods.join("sodium-0.6.jar")).unwrap(), b"OLD");
@@ -1086,7 +1188,10 @@ mod tests {
         assert!(!mods.join("other.jar").exists());
         let names = names_of(&mods);
         assert!(names.iter().any(|name| name == "sodium-0.6.jar"));
-        let bak = names.iter().find(|name| name.starts_with("other.jar.")).unwrap();
+        let bak = names
+            .iter()
+            .find(|name| name.starts_with("other.jar."))
+            .unwrap();
         assert!(bak.ends_with(".bak"));
         assert_eq!(mods.join(bak).parent().unwrap(), mods.as_path());
         assert_eq!(fs::read(mods.join(bak)).unwrap(), b"OTHER");

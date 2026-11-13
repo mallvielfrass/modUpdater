@@ -22,17 +22,29 @@ pub fn pack_dir_zip(dir: &Path) -> Result<PackedZip, String> {
     if !dir.is_dir() {
         return Err("invalid_path".into());
     }
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| "internal".to_string())?.as_nanos();
-    let zip_path = std::env::temp_dir().join(format!(".mu-pack-{}-{nanos}.zip", std::process::id()));
-    let mut guard = FileGuard { path: zip_path.clone(), keep: false };
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "internal".to_string())?
+        .as_nanos();
+    let zip_path =
+        std::env::temp_dir().join(format!(".mu-pack-{}-{nanos}.zip", std::process::id()));
+    let mut guard = FileGuard {
+        path: zip_path.clone(),
+        keep: false,
+    };
     write_dir_zip(&dir, &zip_path)?;
     let bytes = fs::read(&zip_path).map_err(|_| "internal".to_string())?;
     guard.keep = false;
-    Ok(PackedZip { filename: zip_download_name(&dir), bytes })
+    Ok(PackedZip {
+        filename: zip_download_name(&dir),
+        bytes,
+    })
 }
 
 pub fn load_registry(root: &Path) -> Result<BTreeMap<String, String>, String> {
-    let root = root.canonicalize().map_err(|_| "invalid_config".to_string())?;
+    let root = root
+        .canonicalize()
+        .map_err(|_| "invalid_config".to_string())?;
     let path = root.join(REGISTRY);
     if is_symlink(&path) {
         return Err("invalid_path".into());
@@ -63,10 +75,18 @@ pub fn apply_mod_config(
     let expect = normalize_sha(sha256)?;
     let root = crate::backup::version_root(mods_dir)?;
     let _ = resolve_dest(&root, dest)?;
-    let url = jars::api_url(server_url, &format!("/api/mods/{mod_id}/configs/{config_id}/file"))?;
-    let temp_dir = std::env::temp_dir().canonicalize().map_err(|_| "internal".to_string())?;
+    let url = jars::api_url(
+        server_url,
+        &format!("/api/mods/{mod_id}/configs/{config_id}/file"),
+    )?;
+    let temp_dir = std::env::temp_dir()
+        .canonicalize()
+        .map_err(|_| "internal".to_string())?;
     let temp = jars::create_temp(&temp_dir)?;
-    let mut guard = FileGuard { path: temp.clone(), keep: false };
+    let mut guard = FileGuard {
+        path: temp.clone(),
+        keep: false,
+    };
     let hash = jars::download(&url, &temp, server_url, None, progress)?;
     if !ct_eq(&hash, &expect) {
         return Err("hash_mismatch".into());
@@ -76,7 +96,14 @@ pub fn apply_mod_config(
     Ok(())
 }
 
-pub fn install_config_file(root: &Path, config_id: &str, dest: &str, kind: &str, sha256: &str, src: &Path) -> Result<(), String> {
+pub fn install_config_file(
+    root: &Path,
+    config_id: &str,
+    dest: &str,
+    kind: &str,
+    sha256: &str,
+    src: &Path,
+) -> Result<(), String> {
     if !jars::valid_mod_id(config_id) {
         return Err("not_found".into());
     }
@@ -88,7 +115,9 @@ pub fn install_config_file(root: &Path, config_id: &str, dest: &str, kind: &str,
     if !ct_eq(&hash, &expect) {
         return Err("hash_mismatch".into());
     }
-    let root = root.canonicalize().map_err(|_| "invalid_config".to_string())?;
+    let root = root
+        .canonicalize()
+        .map_err(|_| "invalid_config".to_string())?;
     let target = resolve_dest(&root, dest)?;
     move_aside(&target)?;
     if kind == "file" {
@@ -106,7 +135,9 @@ pub fn install_config_file(root: &Path, config_id: &str, dest: &str, kind: &str,
 
 pub fn resolve_dest(root: &Path, dest: &str) -> Result<PathBuf, String> {
     validate_rel(dest)?;
-    let root = root.canonicalize().map_err(|_| "invalid_config".to_string())?;
+    let root = root
+        .canonicalize()
+        .map_err(|_| "invalid_config".to_string())?;
     if !root.is_dir() {
         return Err("invalid_config".into());
     }
@@ -120,7 +151,9 @@ pub fn resolve_dest(root: &Path, dest: &str) -> Result<PathBuf, String> {
                     return Err("invalid_path".into());
                 }
                 if meta.is_dir() {
-                    let canon = next.canonicalize().map_err(|_| "invalid_path".to_string())?;
+                    let canon = next
+                        .canonicalize()
+                        .map_err(|_| "invalid_path".to_string())?;
                     if !canon.starts_with(&root) {
                         return Err("invalid_path".into());
                     }
@@ -144,18 +177,27 @@ pub fn resolve_dest(root: &Path, dest: &str) -> Result<PathBuf, String> {
             Err(_) => return Err("invalid_path".into()),
         }
     }
-    if cursor.components().any(|component| matches!(component, Component::ParentDir)) || !cursor.starts_with(&root) || cursor == root {
+    if cursor
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+        || !cursor.starts_with(&root)
+        || cursor == root
+    {
         return Err("invalid_path".into());
     }
     Ok(cursor)
 }
 
 fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
-    let dest = dest.canonicalize().map_err(|_| "invalid_path".to_string())?;
+    let dest = dest
+        .canonicalize()
+        .map_err(|_| "invalid_path".to_string())?;
     let file = File::open(zip_path).map_err(|_| "internal".to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|_| "invalid_config".to_string())?;
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(|_| "invalid_path".to_string())?;
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|_| "invalid_path".to_string())?;
         if entry.is_symlink() {
             return Err("invalid_path".into());
         }
@@ -165,7 +207,10 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
         if rel.as_os_str().is_empty() {
             continue;
         }
-        if rel.components().any(|component| !matches!(component, Component::Normal(_))) {
+        if rel
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+        {
             return Err("invalid_path".into());
         }
         let out = dest.join(&rel);
@@ -179,7 +224,12 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
         if let Some(parent) = out.parent() {
             fs::create_dir_all(parent).map_err(|_| "internal".to_string())?;
         }
-        let mut outfile = OpenOptions::new().create(true).write(true).truncate(true).open(&out).map_err(|_| "internal".to_string())?;
+        let mut outfile = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&out)
+            .map_err(|_| "internal".to_string())?;
         std::io::copy(&mut entry, &mut outfile).map_err(|_| "internal".to_string())?;
         outfile.sync_all().map_err(|_| "internal".to_string())?;
     }
@@ -202,9 +252,15 @@ fn move_aside(path: &Path) -> Result<(), String> {
     if meta.file_type().is_symlink() {
         return Err("invalid_path".into());
     }
-    let name = path.file_name().and_then(|item| item.to_str()).ok_or_else(|| "invalid_path".to_string())?;
+    let name = path
+        .file_name()
+        .and_then(|item| item.to_str())
+        .ok_or_else(|| "invalid_path".to_string())?;
     let parent = path.parent().ok_or_else(|| "invalid_path".to_string())?;
-    let unix = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| "internal".to_string())?.as_secs();
+    let unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "internal".to_string())?
+        .as_secs();
     let bak = next_bak(parent, name, unix)?;
     let dest = parent.join(&bak);
     if dest.parent() != Some(parent) {
@@ -233,7 +289,12 @@ fn next_bak(dir: &Path, name: &str, unix: u64) -> Result<String, String> {
 
 fn copy_synced(src: &Path, dest: &Path) -> Result<(), String> {
     let mut input = File::open(src).map_err(|_| "internal".to_string())?;
-    let mut output = OpenOptions::new().create(true).write(true).truncate(true).open(dest).map_err(|_| "internal".to_string())?;
+    let mut output = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(dest)
+        .map_err(|_| "internal".to_string())?;
     std::io::copy(&mut input, &mut output).map_err(|_| "internal".to_string())?;
     output.sync_all().map_err(|_| "internal".to_string())?;
     Ok(())
@@ -247,7 +308,11 @@ fn validate_rel(dest: &str) -> Result<(), String> {
         return Err("invalid_path".into());
     }
     let parts: Vec<&str> = dest.split('/').collect();
-    if parts.is_empty() || parts.iter().any(|part| part.is_empty() || *part == "." || *part == "..") {
+    if parts.is_empty()
+        || parts
+            .iter()
+            .any(|part| part.is_empty() || *part == "." || *part == "..")
+    {
         return Err("invalid_path".into());
     }
     Ok(())
@@ -277,7 +342,8 @@ pub(crate) fn pack_directory(dir: &Path, dest: &Path) -> Result<(), String> {
 fn write_dir_zip(dir: &Path, zip_path: &Path) -> Result<(), String> {
     let file = File::create(zip_path).map_err(|_| "internal".to_string())?;
     let mut zip = ZipWriter::new(file);
-    let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
     write_dir_entries(dir, dir, &zip_path, &mut zip, &opts, 0)?;
     zip.finish().map_err(|_| "internal".to_string())?;
     Ok(())
@@ -294,14 +360,22 @@ fn write_dir_entries(
     if depth > 64 {
         return Err("internal".into());
     }
-    let mut entries = fs::read_dir(dir).map_err(|_| "internal".to_string())?.collect::<Result<Vec<_>, _>>().map_err(|_| "internal".to_string())?;
+    let mut entries = fs::read_dir(dir)
+        .map_err(|_| "internal".to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "internal".to_string())?;
     entries.sort_by_key(|entry| entry.file_name());
     let mut files = 0usize;
     for entry in entries {
         let Some(name) = entry.file_name().to_str().map(str::to_string) else {
             return Err("invalid_path".into());
         };
-        if name == "." || name == ".." || name.contains('/') || name.contains('\\') || name.contains('\0') {
+        if name == "."
+            || name == ".."
+            || name.contains('/')
+            || name.contains('\\')
+            || name.contains('\0')
+        {
             return Err("invalid_path".into());
         }
         let path = dir.join(&name);
@@ -320,24 +394,47 @@ fn write_dir_entries(
         if !file_type.is_file() {
             continue;
         }
-        let rel = path.strip_prefix(root).map_err(|_| "invalid_path".to_string())?;
-        let stored = rel.components().map(|component| component.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/");
-        zip.start_file(stored, *opts).map_err(|_| "internal".to_string())?;
+        let rel = path
+            .strip_prefix(root)
+            .map_err(|_| "invalid_path".to_string())?;
+        let stored = rel
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
+        zip.start_file(stored, *opts)
+            .map_err(|_| "internal".to_string())?;
         let mut input = File::open(&path).map_err(|_| "internal".to_string())?;
         std::io::copy(&mut input, zip).map_err(|_| "internal".to_string())?;
         files += 1;
     }
     if files == 0 && dir != root {
-        let rel = dir.strip_prefix(root).map_err(|_| "invalid_path".to_string())?;
-        let stored = rel.components().map(|component| component.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/");
-        zip.add_directory(format!("{stored}/"), *opts).map_err(|_| "internal".to_string())?;
+        let rel = dir
+            .strip_prefix(root)
+            .map_err(|_| "invalid_path".to_string())?;
+        let stored = rel
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
+        zip.add_directory(format!("{stored}/"), *opts)
+            .map_err(|_| "internal".to_string())?;
     }
     Ok(())
 }
 
 fn zip_download_name(dir: &Path) -> String {
-    let raw = dir.file_name().and_then(|name| name.to_str()).unwrap_or("config");
-    if raw.is_empty() || raw == "." || raw == ".." || raw.contains('/') || raw.contains('\\') || raw.contains('\0') {
+    let raw = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("config");
+    if raw.is_empty()
+        || raw == "."
+        || raw == ".."
+        || raw.contains('/')
+        || raw.contains('\\')
+        || raw.contains('\0')
+    {
         "config.zip".into()
     } else {
         format!("{raw}.zip")
@@ -345,7 +442,9 @@ fn zip_download_name(dir: &Path) -> String {
 }
 
 fn is_symlink(path: &Path) -> bool {
-    fs::symlink_metadata(path).map(|meta| meta.file_type().is_symlink()).unwrap_or(false)
+    fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false)
 }
 
 struct FileGuard {
@@ -376,8 +475,12 @@ mod tests {
         fn new(label: &str) -> Self {
             static N: AtomicUsize = AtomicUsize::new(0);
             let n = N.fetch_add(1, Ordering::Relaxed);
-            let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-            let path = std::env::temp_dir().join(format!("modupdater-cfgapply-{label}-{n}-{nanos}"));
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path =
+                std::env::temp_dir().join(format!("modupdater-cfgapply-{label}-{n}-{nanos}"));
             fs::create_dir_all(&path).unwrap();
             Self { path }
         }
@@ -423,10 +526,26 @@ mod tests {
         let src = tmp.path.join("new.toml");
         fs::write(&src, b"new-config").unwrap();
         let root = root.canonicalize().unwrap();
-        install_config_file(&root, &id(), "config/jei/jei.toml", "file", &digest(b"new-config"), &src).unwrap();
-        assert_eq!(fs::read(root.join("config/jei/jei.toml")).unwrap(), b"new-config");
-        let names = fs::read_dir(root.join("config/jei")).unwrap().map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned()).collect::<Vec<_>>();
-        assert!(names.iter().any(|name| name.starts_with("jei.toml.") && name.ends_with(".bak")));
+        install_config_file(
+            &root,
+            &id(),
+            "config/jei/jei.toml",
+            "file",
+            &digest(b"new-config"),
+            &src,
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(root.join("config/jei/jei.toml")).unwrap(),
+            b"new-config"
+        );
+        let names = fs::read_dir(root.join("config/jei"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert!(names
+            .iter()
+            .any(|name| name.starts_with("jei.toml.") && name.ends_with(".bak")));
         let bak = names.iter().find(|name| name.ends_with(".bak")).unwrap();
         assert_eq!(fs::read(root.join("config/jei").join(bak)).unwrap(), b"old");
         let map = load_registry(&root).unwrap();
@@ -450,11 +569,27 @@ mod tests {
         }
         let root = root.canonicalize().unwrap();
         let bytes = fs::read(&zip_path).unwrap();
-        install_config_file(&root, &id(), "shaderpacks/Complementary", "dir", &digest(&bytes), &zip_path).unwrap();
-        assert_eq!(fs::read(root.join("shaderpacks/Complementary/shaders/a.txt")).unwrap(), b"shader");
+        install_config_file(
+            &root,
+            &id(),
+            "shaderpacks/Complementary",
+            "dir",
+            &digest(&bytes),
+            &zip_path,
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(root.join("shaderpacks/Complementary/shaders/a.txt")).unwrap(),
+            b"shader"
+        );
         let parent = root.join("shaderpacks");
-        let names = fs::read_dir(&parent).unwrap().map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned()).collect::<Vec<_>>();
-        assert!(names.iter().any(|name| name.starts_with("Complementary.") && name.ends_with(".bak")));
+        let names = fs::read_dir(&parent)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert!(names
+            .iter()
+            .any(|name| name.starts_with("Complementary.") && name.ends_with(".bak")));
 
         let slip = tmp.path.join("slip.zip");
         {
