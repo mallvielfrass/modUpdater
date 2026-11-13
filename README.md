@@ -183,7 +183,7 @@ docs/screenshots/  снимки для этого README
 
 ## Структура после разрезания
 
-Поведение, HTTP, JSON и команды Tauri не менялись. Общие правила имени jar и id живут в библиотеке своего языка. Forge не разрезан: для `compileJava` нет рабочего JDK 17 (`/usr/lib/jvm/java-17-openjdk`).
+Поведение, HTTP, JSON и команды Tauri не менялись. Общие правила имени jar и id живут в библиотеке своего языка.
 
 Сервер:
 
@@ -199,6 +199,12 @@ docs/screenshots/  снимки для этого README
 - `client/src/ui/admin/` — вкладки. `Admin.tsx` их собирает.
 - `client/src-tauri/src/modlib.rs` — имя jar, id, bak и разбор `fabric.mod.json`, `quilt.mod.json`, `mods.toml`. `jars.rs` реэкспортирует публичные имена, скачивание осталось там.
 - `paths.rs` — каталог конфига и сессия. `transfer.rs` — скачивание бэкапа и загрузка мира. Имена команд Tauri те же.
+
+Forge, пакет `modupdater` тот же:
+
+- `ModSync.java` — фасад: статические `run`, `inspect`, `update`.
+- `SyncHttp.java` — каталог и скачивание. `SyncState.java` — файл состояния и отложенная замена. `SyncFiles.java` — jar, хеш и конфиги.
+- `modupdater.lib`: `JarName` (`safeJar` по всей строке), `JarMeta`, `Match` (`locate`), `Bak` (`renameToBak`), `Ids` (`validId`), `LocalJar`.
 
 Проверка одним запуском: `scripts/smoke.sh`. В CI для `client/src-tauri` добавлен `cargo fmt --check`.
 
@@ -243,6 +249,17 @@ flowchart LR
     LibRs --> Paths
     LibRs --> Transfer
     Jars --> ModlibRs
+  end
+  subgraph forge [forge-mod]
+    ModSync[ModSync]
+    SyncHttp[SyncHttp]
+    SyncState[SyncState]
+    SyncFiles[SyncFiles]
+    LibJava[modupdater.lib]
+    ModSync --> SyncHttp
+    ModSync --> SyncState
+    ModSync --> SyncFiles
+    ModSync --> LibJava
   end
 ```
 
