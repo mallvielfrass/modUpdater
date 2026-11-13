@@ -1,3 +1,3 @@
 package buildinfo
 
-var Version = "0.1.40"
+var Version = "0.1.41"

@@ -22,3 +22,5 @@ forge-mod/*.iml
 config.json
 session.json
 .DS_Store
+__pycache__
+scripts/__pycache__/upload-forge.cpython-314.pyc
