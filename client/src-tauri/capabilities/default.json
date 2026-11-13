@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Dialog for the mods directory and core window access",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open"]
+}

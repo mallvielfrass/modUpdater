@@ -1,0 +1,15 @@
+services:
+  modupdater:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      MODUPDATER_LISTEN: ":8080"
+      MODUPDATER_DATA_DIR: /data
+    volumes:
+      - modupdater-data:/data
+
+volumes:
+  modupdater-data:

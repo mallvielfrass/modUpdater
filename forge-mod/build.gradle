@@ -1,0 +1,115 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+def readRepoEnv = { String key ->
+    def fromEnv = System.getenv(key)
+    if (fromEnv?.trim()) {
+        return fromEnv.trim()
+    }
+    def file = new File(rootProject.projectDir, "../.env")
+    if (!file.isFile()) {
+        return ""
+    }
+    def found = ""
+    file.eachLine { line ->
+        def text = line.trim()
+        if (!text || text.startsWith("#") || !text.startsWith(key + "=")) {
+            return
+        }
+        found = text.substring(key.length() + 1).trim()
+        if ((found.startsWith('"') && found.endsWith('"')) || (found.startsWith("'") && found.endsWith("'"))) {
+            found = found.substring(1, found.length() - 1)
+        }
+    }
+    return found
+}
+
+def modupdaterOrigin = readRepoEnv("MODUPDATER_SERVER_URL")
+if (!modupdaterOrigin) {
+    modupdaterOrigin = "http://127.0.0.1:8080"
+}
+modupdaterOrigin = modupdaterOrigin.replaceAll(/\/+$/, "")
+if (!(modupdaterOrigin ==~ /^https?:\/\/[A-Za-z0-9._:-]+$/)) {
+    throw new GradleException("MODUPDATER_SERVER_URL must be http://host[:port] or https://host[:port]")
+}
+
+def generatedJava = layout.buildDirectory.dir("generated/sources/modupdater")
+def writeOrigin = tasks.register("writeModupdaterOrigin") {
+    def out = layout.buildDirectory.file("generated/sources/modupdater/modupdater/Origin.java")
+    inputs.property("origin", modupdaterOrigin)
+    outputs.file(out)
+    doLast {
+        def f = out.get().asFile
+        f.parentFile.mkdirs()
+        f.setText("package modupdater;\nfinal class Origin {\n    static final String VALUE = \"${modupdaterOrigin}\";\n    private Origin() {}\n}\n", "UTF-8")
+    }
+}
+sourceSets.main.java.srcDir(generatedJava)
+tasks.named("compileJava").configure { dependsOn(writeOrigin) }
+
+minecraft {
+    mappings channel: mapping_channel, version: mapping_version
+    copyIdeResources = true
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+repositories {
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            forge_version          : forge_version,
+            forge_version_range    : forge_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+    ]
+    inputs.properties replaceProperties
+    filteringCharset = 'UTF-8'
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
+
+tasks.named('jar') {
+    finalizedBy 'reobfJar'
+}

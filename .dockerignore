@@ -1,0 +1,11 @@
+client/node_modules
+client/src-tauri/target
+client/dist
+forge-mod/.gradle
+forge-mod/build
+forge-mod/run
+server/data
+server/modupdater
+server/modupdater-*
+.git
+.env

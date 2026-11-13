@@ -1,0 +1,2 @@
+ALTER TABLE settings ADD COLUMN backup_dest TEXT NOT NULL DEFAULT 'disk';
+ALTER TABLE backups ADD COLUMN dest TEXT NOT NULL DEFAULT 'disk';

@@ -1,0 +1,1 @@
+ALTER TABLE settings ADD COLUMN backup_scope TEXT NOT NULL DEFAULT '';

@@ -1,0 +1,2 @@
+ALTER TABLE settings ADD COLUMN daily_backup TEXT NOT NULL DEFAULT '';
+ALTER TABLE settings ADD COLUMN daily_backup_day TEXT NOT NULL DEFAULT '';
