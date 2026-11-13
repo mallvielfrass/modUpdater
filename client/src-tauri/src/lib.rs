@@ -1,6 +1,7 @@
 mod backup;
 mod configs;
 mod jars;
+mod modlib;
 mod update;
 
 use std::cell::Cell;
