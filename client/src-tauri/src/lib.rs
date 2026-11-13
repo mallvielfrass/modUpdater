@@ -305,6 +305,32 @@ fn inspect_launcher() -> Result<backup::LauncherInfo, String> {
 }
 
 #[tauri::command]
+fn list_instance_backups() -> Result<Vec<backup::LocalBackup>, String> {
+    let cfg = load_config()?;
+    backup::list_instance_backups(&backup::version_root(&mods_dir_from_config(&cfg)?)?)
+}
+
+#[tauri::command]
+fn open_instance_backup(id: String) -> Result<(), String> {
+    let cfg = load_config()?;
+    backup::open_instance_backup(&backup::version_root(&mods_dir_from_config(&cfg)?)?, &id)
+}
+
+#[tauri::command]
+async fn restore_instance_backup(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let cfg = load_config()?;
+        let mods = mods_dir_from_config(&cfg)?;
+        let gate = ProgressGate::new();
+        backup::restore_instance_backup(&backup::version_root(&mods)?, &id, &|loaded, total| {
+            gate.tick(&app, loaded, total);
+        })
+    })
+    .await
+    .map_err(|_| "internal".to_string())?
+}
+
+#[tauri::command]
 async fn duplicate_version(
     app: tauri::AppHandle,
     src: String,
@@ -355,6 +381,9 @@ pub fn run() {
             load_config_registry,
             ensure_instance_backup,
             create_instance_backup,
+            list_instance_backups,
+            open_instance_backup,
+            restore_instance_backup,
             inspect_launcher,
             duplicate_version
         ])

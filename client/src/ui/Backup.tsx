@@ -1,8 +1,8 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { displayError } from "../api";
-import { createInstanceBackup, duplicateVersion, inspectLauncher } from "../commands";
-import type { LauncherInfo } from "../types";
+import { createInstanceBackup, duplicateVersion, inspectLauncher, listInstanceBackups, openInstanceBackup, restoreInstanceBackup } from "../commands";
+import type { LauncherInfo, LocalBackup } from "../types";
 
 interface Props {
   modsDir: string;
@@ -17,12 +17,14 @@ export function Backup(props: Props) {
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
   const [label, setLabel] = useState("");
+  const [backups, setBackups] = useState<LocalBackup[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     setError("");
     if (!props.modsDir.trim()) {
       setInfo(null);
+      setBackups([]);
       return;
     }
     void (async () => {
@@ -32,6 +34,12 @@ export function Backup(props: Props) {
         setInfo(next);
         setSrc(next.current_version);
         setName(next.current_version ? `${next.current_version} (copy 1)` : "");
+      } catch (err) {
+        if (!cancelled) setError(displayError(err));
+      }
+      try {
+        const found = await listInstanceBackups();
+        if (!cancelled) setBackups(found);
       } catch (err) {
         if (!cancelled) setError(displayError(err));
       }
@@ -66,6 +74,20 @@ export function Backup(props: Props) {
     }
   }
 
+  async function onOpen(id: string) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await openInstanceBackup(id);
+    } catch (err) {
+      setError(displayError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canZip = props.modsDir.trim() !== "";
   const legacy = info?.kind === "legacy";
   const versions = !info
     ? []
@@ -75,7 +97,6 @@ export function Backup(props: Props) {
 
   return (
     <section className="card">
-      {info && !legacy ? <p className="hint">Дублирование версии доступно только для Legacy Launcher.</p> : null}
       {legacy && info ? (
         <>
           <div className="field">
@@ -110,12 +131,45 @@ export function Backup(props: Props) {
         <button
           type="button"
           className="btn"
-          disabled={busy || props.modsDir.trim() === ""}
-          onClick={() => void withProgress("бэкап", async () => { await createInstanceBackup(); })}
+          disabled={busy || !canZip}
+          onClick={() => void withProgress("бэкап", async () => {
+            await createInstanceBackup();
+            setBackups(await listInstanceBackups());
+          })}
         >
           Создать zip-бэкап текущей версии
         </button>
       </div>
+      {backups.length > 0 ? (
+        <div className="local-backups">
+          {backups.map((item) => (
+            <article className="local-backup" key={item.id}>
+              <div className="mod-title backup-line">
+                <span>{item.version || item.id}</span>
+                <span className="hint">{formatWhen(item.created)}</span>
+                <span className="hint">{formatBytes(item.bytes)}</span>
+                <span className="filename">{item.id}</span>
+              </div>
+              <div className="row">
+                <button type="button" className="btn btn-quiet" disabled={busy} onClick={() => void onOpen(item.id)}>
+                  Открыть
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  disabled={busy}
+                  onClick={() => void withProgress("разворот", async () => {
+                    await restoreInstanceBackup(item.id);
+                    setBackups(await listInstanceBackups());
+                  })}
+                >
+                  Развернуть
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
       {label ? <ByteMeter label={label} done={done} total={total} /> : null}
       {error ? <p className="error">{error}</p> : null}
     </section>
@@ -141,6 +195,11 @@ function ByteMeter(props: { label: string; done: number; total: number }) {
       <span className="progress">{text}</span>
     </div>
   );
+}
+
+function formatWhen(unix: number): string {
+  if (!Number.isFinite(unix) || unix <= 0) return "";
+  return new Date(unix * 1000).toLocaleString("ru-RU", { dateStyle: "medium", timeStyle: "short" });
 }
 
 function formatBytes(n: number): string {

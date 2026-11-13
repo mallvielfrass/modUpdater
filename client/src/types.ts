@@ -150,6 +150,13 @@ export interface BackupOutcome {
   path: string;
 }
 
+export interface LocalBackup {
+  id: string;
+  version: string;
+  created: number;
+  bytes: number;
+}
+
 export interface ScanResult {
   mods_dir: string;
   added: number;

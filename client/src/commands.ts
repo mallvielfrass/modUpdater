@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { BackupOutcome, Config, LauncherInfo, LocalJar } from "./types";
+import type { BackupOutcome, Config, LauncherInfo, LocalBackup, LocalJar } from "./types";
 
 export function loadConfig(): Promise<Config> {
   return invoke<Config>("load_config");
@@ -119,6 +119,18 @@ export function ensureInstanceBackup(): Promise<BackupOutcome> {
 
 export function createInstanceBackup(): Promise<BackupOutcome> {
   return invoke<BackupOutcome>("create_instance_backup");
+}
+
+export function listInstanceBackups(): Promise<LocalBackup[]> {
+  return invoke<LocalBackup[]>("list_instance_backups");
+}
+
+export function openInstanceBackup(id: string): Promise<void> {
+  return invoke("open_instance_backup", { id });
+}
+
+export function restoreInstanceBackup(id: string): Promise<void> {
+  return invoke("restore_instance_backup", { id });
 }
 
 export function inspectLauncher(): Promise<LauncherInfo> {

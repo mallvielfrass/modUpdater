@@ -77,6 +77,285 @@ pub fn create_instance_backup(
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LocalBackup {
+    pub id: String,
+    pub version: String,
+    pub created: u64,
+    pub bytes: u64,
+}
+
+pub fn list_instance_backups(root: &Path) -> Result<Vec<LocalBackup>, String> {
+    let root = canonical_dir(root)?;
+    let version = root
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    let mut names = fs::read_dir(&root)
+        .map_err(|_| "internal".to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "internal".to_string())?;
+    names.sort_by_key(|entry| entry.file_name());
+    for entry in names {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !backup_file_name(name) {
+            continue;
+        }
+        let path = root.join(name);
+        if path.parent() != Some(root.as_path()) || is_symlink(&path) || !path.is_file() {
+            continue;
+        }
+        let meta = entry.metadata().map_err(|_| "internal".to_string())?;
+        if !meta.is_file() {
+            continue;
+        }
+        out.push(LocalBackup {
+            id: name.to_string(),
+            version: version.clone(),
+            created: backup_created(name, mtime_secs(&meta)),
+            bytes: meta.len(),
+        });
+    }
+    out.sort_by(|a, b| b.created.cmp(&a.created).then(b.id.cmp(&a.id)));
+    Ok(out)
+}
+
+pub fn open_instance_backup(root: &Path, id: &str) -> Result<(), String> {
+    let root = canonical_dir(root)?;
+    let _zip = resolve_backup(&root, id)?;
+    open_file_manager(&root)
+}
+
+pub fn restore_instance_backup(
+    root: &Path,
+    id: &str,
+    progress: &dyn Fn(u64, u64),
+) -> Result<(), String> {
+    let root = canonical_dir(root)?;
+    let zip_path = resolve_backup(&root, id)?;
+    let file = File::open(&zip_path).map_err(|_| "rollback_failed".to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|_| "rollback_failed".to_string())?;
+    let plan = plan_restore(&mut archive, id)?;
+    let total = plan.iter().map(|item| item.bytes).sum::<u64>();
+    progress(0, total);
+    let mut loaded = 0u64;
+    for item in &plan {
+        let mut entry = archive
+            .by_index(item.index)
+            .map_err(|_| "rollback_failed".to_string())?;
+        let dest = ensure_inside(&root, &item.parts, item.dir)?;
+        if item.dir {
+            continue;
+        }
+        if is_symlink(&dest) || dest.is_dir() {
+            return Err("invalid_path".into());
+        }
+        let mut output = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&dest)
+            .map_err(|_| "rollback_failed".to_string())?;
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            let n = entry
+                .read(&mut buf)
+                .map_err(|_| "rollback_failed".to_string())?;
+            if n == 0 {
+                break;
+            }
+            output
+                .write_all(&buf[..n])
+                .map_err(|_| "rollback_failed".to_string())?;
+            loaded += n as u64;
+            progress(loaded.min(total), total);
+        }
+        output
+            .sync_all()
+            .map_err(|_| "rollback_failed".to_string())?;
+    }
+    progress(total, total);
+    Ok(())
+}
+
+struct RestoreItem {
+    index: usize,
+    parts: Vec<String>,
+    dir: bool,
+    bytes: u64,
+}
+
+fn plan_restore<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    id: &str,
+) -> Result<Vec<RestoreItem>, String> {
+    let mut plan = Vec::new();
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|_| "rollback_failed".to_string())?;
+        if entry.is_symlink() {
+            return Err("invalid_path".into());
+        }
+        let rel = entry
+            .enclosed_name()
+            .ok_or_else(|| "invalid_path".to_string())?;
+        let parts = safe_parts(&rel)?;
+        if parts.len() == 1 && parts[0] == id {
+            return Err("invalid_path".into());
+        }
+        let dir = entry.is_dir();
+        plan.push(RestoreItem {
+            index,
+            parts,
+            dir,
+            bytes: if dir { 0 } else { entry.size() },
+        });
+    }
+    Ok(plan)
+}
+
+fn safe_parts(path: &Path) -> Result<Vec<String>, String> {
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(name) => {
+                let text = name.to_str().ok_or_else(|| "invalid_path".to_string())?;
+                if !segment_ok(text) {
+                    return Err("invalid_path".into());
+                }
+                parts.push(text.to_string());
+            }
+            _ => return Err("invalid_path".into()),
+        }
+    }
+    if parts.is_empty() {
+        return Err("invalid_path".into());
+    }
+    Ok(parts)
+}
+
+fn ensure_inside(root: &Path, parts: &[String], dir: bool) -> Result<PathBuf, String> {
+    if parts.is_empty() {
+        return Err("invalid_path".into());
+    }
+    let mut current = root.to_path_buf();
+    for (index, name) in parts.iter().enumerate() {
+        if !segment_ok(name) {
+            return Err("invalid_path".into());
+        }
+        current.push(name);
+        if !current.starts_with(root) || current == root {
+            return Err("invalid_path".into());
+        }
+        if is_symlink(&current) {
+            return Err("invalid_path".into());
+        }
+        let last = index + 1 == parts.len();
+        if last && !dir {
+            if current.is_dir() {
+                return Err("invalid_path".into());
+            }
+            break;
+        }
+        if current.is_file() {
+            return Err("invalid_path".into());
+        }
+        if !current.exists() {
+            fs::create_dir(&current).map_err(|_| "rollback_failed".to_string())?;
+        }
+    }
+    Ok(current)
+}
+
+fn resolve_backup(root: &Path, id: &str) -> Result<PathBuf, String> {
+    if !backup_file_name(id) {
+        return Err("invalid_path".into());
+    }
+    let path = root.join(id);
+    if path.parent() != Some(root) || is_symlink(&path) || !path.is_file() {
+        return Err("not_found".into());
+    }
+    let canon = path.canonicalize().map_err(|_| "not_found".to_string())?;
+    if canon.parent() != Some(root) {
+        return Err("invalid_path".into());
+    }
+    Ok(canon)
+}
+
+fn backup_file_name(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix(BACKUP_PREFIX) else {
+        return false;
+    };
+    let Some(rest) = rest.strip_suffix(".zip") else {
+        return false;
+    };
+    let mut parts = rest.split('-');
+    let Some(stamp) = parts.next() else {
+        return false;
+    };
+    if stamp.is_empty() || !stamp.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    if let Some(index) = parts.next() {
+        if index.is_empty()
+            || !index.bytes().all(|byte| byte.is_ascii_digit())
+            || parts.next().is_some()
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn backup_created(name: &str, fallback: u64) -> u64 {
+    name.strip_prefix(BACKUP_PREFIX)
+        .and_then(|rest| rest.strip_suffix(".zip"))
+        .and_then(|rest| rest.split('-').next())
+        .and_then(|stamp| stamp.parse::<u64>().ok())
+        .unwrap_or(fallback)
+}
+
+fn mtime_secs(meta: &fs::Metadata) -> u64 {
+    meta.modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn file_manager_program() -> Result<&'static str, String> {
+    #[cfg(target_os = "linux")]
+    {
+        Ok("xdg-open")
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Ok("explorer.exe")
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        Err("unsupported_os".into())
+    }
+}
+
+fn open_file_manager(dir: &Path) -> Result<(), String> {
+    let program = file_manager_program()?;
+    let status = std::process::Command::new(program)
+        .arg(dir)
+        .status()
+        .map_err(|_| "open_failed".to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("open_failed".into())
+    }
+}
+
 pub fn inspect_launcher(mods_dir: &Path) -> Result<LauncherInfo, String> {
     let mods = mods_dir
         .canonicalize()
@@ -568,6 +847,7 @@ impl Drop for FileGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct Tmp {
@@ -806,5 +1086,140 @@ mod tests {
         assert!(names.iter().any(|name| name == "mods/a.jar"));
         assert!(names.iter().any(|name| name == "options.txt"));
         assert!(names.iter().all(|name| !name.starts_with("logs")));
+    }
+
+    #[test]
+    fn lists_only_backup_zips_in_the_instance() {
+        let tmp = Tmp::new("list");
+        let root = tmp.path.join("instance");
+        fs::create_dir_all(root.join("mods")).unwrap();
+        fs::write(root.join("mods/a.jar"), b"jar").unwrap();
+        fs::write(root.join("options.txt"), b"opt").unwrap();
+        fs::write(root.join("notes.zip"), b"nope").unwrap();
+        let made = create_instance_backup(&root, &|_, _| {}).unwrap();
+        let id = Path::new(&made.path)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&made.path, root.join("modupdater-initial-backup-9.zip"))
+            .unwrap();
+        let listed = list_instance_backups(&root).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, id);
+        assert_eq!(listed[0].version, "instance");
+        assert_eq!(listed[0].bytes, fs::metadata(&made.path).unwrap().len());
+        let stamp: u64 = id
+            .strip_prefix(BACKUP_PREFIX)
+            .unwrap()
+            .strip_suffix(".zip")
+            .unwrap()
+            .split('-')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(listed[0].created, stamp);
+        assert!(list_instance_backups(&root)
+            .unwrap()
+            .iter()
+            .all(|item| item.id == id));
+    }
+
+    #[test]
+    fn open_accepts_only_a_listed_backup_id() {
+        let tmp = Tmp::new("open");
+        let root = tmp.path.join("instance");
+        fs::create_dir_all(&root).unwrap();
+        assert_eq!(
+            open_instance_backup(&root, "../evil.zip").unwrap_err(),
+            "invalid_path"
+        );
+        assert_eq!(
+            open_instance_backup(&root, "/tmp/modupdater-initial-backup-1.zip").unwrap_err(),
+            "invalid_path"
+        );
+        assert_eq!(
+            open_instance_backup(&root, "modupdater-initial-backup-1.zip").unwrap_err(),
+            "not_found"
+        );
+        #[cfg(target_os = "linux")]
+        assert_eq!(file_manager_program().unwrap(), "xdg-open");
+        #[cfg(target_os = "windows")]
+        assert_eq!(file_manager_program().unwrap(), "explorer.exe");
+    }
+
+    #[test]
+    fn restore_overlays_instance_and_stops_on_escape() {
+        let tmp = Tmp::new("restore");
+        let root = tmp.path.join("instance");
+        fs::create_dir_all(root.join("mods")).unwrap();
+        fs::write(root.join("mods/a.jar"), b"jar").unwrap();
+        fs::write(root.join("options.txt"), b"opt").unwrap();
+        fs::write(root.join("keep.txt"), b"keep").unwrap();
+        let outside = tmp.path.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("secret"), b"no").unwrap();
+        let made = create_instance_backup(&root, &|_, _| {}).unwrap();
+        let id = Path::new(&made.path)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        fs::write(root.join("options.txt"), b"changed").unwrap();
+        fs::write(root.join("mods/a.jar"), b"changed").unwrap();
+        restore_instance_backup(&root, &id, &|_, _| {}).unwrap();
+        assert_eq!(fs::read(root.join("options.txt")).unwrap(), b"opt");
+        assert_eq!(fs::read(root.join("mods/a.jar")).unwrap(), b"jar");
+        assert_eq!(fs::read(root.join("keep.txt")).unwrap(), b"keep");
+        assert_eq!(fs::read(outside.join("secret")).unwrap(), b"no");
+        assert!(Path::new(&made.path).is_file());
+
+        let evil = root.join("modupdater-initial-backup-2.zip");
+        let mut zip = ZipWriter::new(File::create(&evil).unwrap());
+        let opts = SimpleFileOptions::default();
+        zip.start_file("options.txt", opts).unwrap();
+        zip.write_all(b"pwned").unwrap();
+        zip.start_file("../outside/pwned.txt", opts).unwrap();
+        zip.write_all(b"pwned").unwrap();
+        zip.finish().unwrap();
+        assert_eq!(
+            restore_instance_backup(&root, "modupdater-initial-backup-2.zip", &|_, _| {})
+                .unwrap_err(),
+            "invalid_path"
+        );
+        assert_eq!(fs::read(root.join("options.txt")).unwrap(), b"opt");
+        assert!(!outside.join("pwned.txt").exists());
+        assert_eq!(fs::read(outside.join("secret")).unwrap(), b"no");
+
+        let link_zip = root.join("modupdater-initial-backup-3.zip");
+        let mut zip = ZipWriter::new(File::create(&link_zip).unwrap());
+        zip.add_symlink(
+            "mods/link",
+            outside.join("secret").to_string_lossy().into_owned(),
+            opts,
+        )
+        .unwrap();
+        zip.finish().unwrap();
+        assert_eq!(
+            restore_instance_backup(&root, "modupdater-initial-backup-3.zip", &|_, _| {})
+                .unwrap_err(),
+            "invalid_path"
+        );
+        assert!(!root.join("mods/link").exists());
+
+        #[cfg(unix)]
+        {
+            let linked = tmp.path.join("linked-mods");
+            fs::create_dir_all(&linked).unwrap();
+            fs::remove_dir_all(root.join("mods")).unwrap();
+            std::os::unix::fs::symlink(&linked, root.join("mods")).unwrap();
+            assert_eq!(
+                restore_instance_backup(&root, &id, &|_, _| {}).unwrap_err(),
+                "invalid_path"
+            );
+            assert!(fs::read_dir(&linked).unwrap().next().is_none());
+        }
     }
 }

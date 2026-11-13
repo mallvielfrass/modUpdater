@@ -12,7 +12,7 @@ endif
 SERVER_URL ?= $(if $(MODUPDATER_SERVER_URL),$(MODUPDATER_SERVER_URL),http://127.0.0.1:8080)
 DEPLOY_PATH ?= $(if $(MODUPDATER_DEPLOY_PATH),$(MODUPDATER_DEPLOY_PATH),/opt/modupdater)
 
-.PHONY: server client-linux client-windows clients all upload release bump upgrade bump-forge forge upload-forge
+.PHONY: server client-linux client-windows clients all upload release bump upgrade bump-forge forge upload-forge appimage deb linux-bundles
 
 FORGE_PROPS := forge-mod/gradle.properties
 FORGE_JAVA := $(shell if [ -x /usr/lib/jvm/java-21-openjdk/bin/javac ]; then echo /usr/lib/jvm/java-21-openjdk; elif [ -n "$$JAVA_HOME" ] && [ -x "$$JAVA_HOME/bin/javac" ]; then echo "$$JAVA_HOME"; fi)
@@ -26,6 +26,44 @@ bump:
 
 client-linux: bump
 	cd client && npx @tauri-apps/cli build --no-bundle
+
+# appimage — linuxdeploy кладёт webkit и gtk в образ. deb — тот же набор в пакете, Depends только libc6. linux-bundles — оба.
+appimage:
+	cd client && CI=true npx @tauri-apps/cli build --bundles appimage
+
+deb: appimage
+	command -v dpkg-deb >/dev/null || { echo "нет dpkg-deb" >&2; exit 1; }
+	set -euo pipefail; \
+	ver=$$(python3 -c 'import json; print(json.load(open("client/src-tauri/tauri.conf.json"))["version"])'); \
+	debarch=$$(uname -m); \
+	if [ "$$debarch" = x86_64 ]; then debarch=amd64; fi; \
+	bundle=client/src-tauri/target/release/bundle/appimage; \
+	img="$$bundle/modupdater_$${ver}_$${debarch}.AppImage"; \
+	if [ ! -f "$$img" ]; then img=$$(find "$$bundle" -maxdepth 1 -type f -name '*.AppImage' -print -quit); fi; \
+	test -f "$$img"; \
+	img=$$(readlink -f "$$img"); \
+	work=client/src-tauri/target/release/bundle/deb/.work; \
+	rm -rf "$$work"; \
+	mkdir -p "$$work/extract" "$$work/root/DEBIAN" "$$work/root/opt/modupdater" "$$work/root/usr/bin"; \
+	( cd "$$work/extract" && "$$img" --appimage-extract ); \
+	cp -a "$$work/extract/squashfs-root/." "$$work/root/opt/modupdater/"; \
+	test -x "$$work/root/opt/modupdater/AppRun"; \
+	test -d "$$work/root/opt/modupdater/usr/lib"; \
+	printf '%s\n' '#!/bin/sh' 'export APPDIR=/opt/modupdater' 'exec "$$APPDIR/AppRun" "$$@"' > "$$work/root/usr/bin/modupdater"; \
+	chmod 755 "$$work/root/usr/bin/modupdater"; \
+	{ \
+		echo "Package: modupdater"; \
+		echo "Version: $$ver"; \
+		echo "Architecture: $$debarch"; \
+		echo "Maintainer: modupdater"; \
+		echo "Depends: libc6"; \
+		echo "Description: Синхронизация модов Minecraft"; \
+	} > "$$work/root/DEBIAN/control"; \
+	mkdir -p client/src-tauri/target/release/bundle/deb; \
+	dpkg-deb --root-owner-group --build "$$work/root" "client/src-tauri/target/release/bundle/deb/modupdater_$${ver}_$${debarch}.deb"; \
+	rm -rf "$$work"
+
+linux-bundles: deb
 
 client-windows: bump
 	cd client && PATH="$(HOME)/.cargo/bin:$$PATH" npx @tauri-apps/cli build --no-bundle --runner cargo-xwin --target x86_64-pc-windows-msvc

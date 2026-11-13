@@ -289,6 +289,21 @@ select:focus {
 
 .backup-line { flex-wrap: wrap; }
 
+.local-backups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.local-backup {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .backup-sha {
   color: var(--muted);
   font-family: ui-monospace, monospace;
