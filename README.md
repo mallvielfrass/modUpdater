@@ -181,6 +181,71 @@ plans/             внутренние спецификации, не руко�
 docs/screenshots/  снимки для этого README
 ```
 
+## Структура после разрезания
+
+Поведение, HTTP, JSON и команды Tauri не менялись. Общие правила имени jar и id живут в библиотеке своего языка. Forge не разрезан: для `compileJava` нет рабочего JDK 17 (`/usr/lib/jvm/java-17-openjdk`).
+
+Сервер:
+
+- `server/internal/modlib` — имя jar и архива, разбор метаданных jar, id из 32 hex. `mods.SafeJarName` и `store.ValidID` вызывают его. `ResolveModsDir` остался в `mods`.
+- `server/internal/store/migrate.go` — миграции SQLite. `Open` на месте.
+- `server/internal/httpapi/respond.go` — JSON и коды ошибок. `limiter.go` — лимит логина. Маршруты по-прежнему в `New`.
+- `server/internal/mods/files.go` — временный файл, переименование, хеш, копирование. `scan.go` — скан каталога. `publish.go` — публичная выдача и история. `backup_copy.go` — копирование деревьев, tar и zip. Расписание и откат остались в `backup.go`.
+
+Клиент:
+
+- `client/src/modlib.ts` — выбор локального jar: sha256, затем slug, затем имя файла, и `isRequiredMod`. `sync.ts` по-прежнему собирает `SyncItem`.
+- `client/src/api/http.ts`, `auth.ts`, `mods.ts`, `backups.ts`, `datapacks.ts`. `api.ts` только реэкспортирует. `onUnauthorized` в `http.ts`.
+- `client/src/ui/admin/` — вкладки. `Admin.tsx` их собирает.
+- `client/src-tauri/src/modlib.rs` — имя jar, id, bak и разбор `fabric.mod.json`, `quilt.mod.json`, `mods.toml`. `jars.rs` реэкспортирует публичные имена, скачивание осталось там.
+- `paths.rs` — каталог конфига и сессия. `transfer.rs` — скачивание бэкапа и загрузка мира. Имена команд Tauri те же.
+
+Проверка одним запуском: `scripts/smoke.sh`. В CI для `client/src-tauri` добавлен `cargo fmt --check`.
+
+```mermaid
+flowchart LR
+  subgraph srv [server]
+    Http[httpapi New]
+    Respond[respond.go]
+    Limit[limiter.go]
+    Mods[mods.Service]
+    Files[files scan publish]
+    Copy[backup_copy.go]
+    Store[store ValidID]
+    Migrate[store/migrate.go]
+    ModlibGo[modlib]
+    Http --> Respond
+    Http --> Limit
+    Http --> Mods
+    Mods --> Files
+    Mods --> Copy
+    Mods --> ModlibGo
+    Store --> ModlibGo
+  end
+  subgraph ui [client]
+    ApiTs[api.ts]
+    HttpTs[api/http.ts]
+    Sync[sync.ts]
+    ModlibTs[modlib.ts]
+    Admin[Admin.tsx]
+    Tabs[ui/admin]
+    ApiTs --> HttpTs
+    Sync --> ModlibTs
+    Admin --> Tabs
+    Admin --> ApiTs
+  end
+  subgraph rust [src-tauri]
+    LibRs[lib.rs]
+    Paths[paths.rs]
+    Transfer[transfer.rs]
+    Jars[jars.rs]
+    ModlibRs[modlib.rs]
+    LibRs --> Paths
+    LibRs --> Transfer
+    Jars --> ModlibRs
+  end
+```
+
 ## Ограничения
 
 Отдельного roadmap в репозитории нет.
